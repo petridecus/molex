@@ -34,8 +34,8 @@ for e in &entities {
 
 ## Documentation
 
-- **API docs:** `cargo doc --open`
-- **Book:** `cd docs && mdbook serve`
+- [**Guide**](https://petridecus.github.io/molex/) — architecture, modules, and examples
+- [**API reference**](https://petridecus.github.io/molex/api/molex/) — generated rustdoc
 
 ## License
 
