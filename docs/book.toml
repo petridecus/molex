@@ -1,5 +1,5 @@
 [book]
-title = "molconv"
+title = "molex"
 description = "Molecular structure conversion library"
 authors = ["Andreas Petrides"]
 language = "en"
@@ -9,4 +9,4 @@ src = "src"
 build-dir = "book"
 
 [output.html]
-git-repository-url = "https://github.com/petridecus/molconv"
+git-repository-url = "https://github.com/petridecus/molex"

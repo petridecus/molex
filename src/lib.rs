@@ -4,8 +4,8 @@
 //! # Quick start
 //!
 //! ```rust,ignore
-//! use molconv::{MoleculeEntity, MoleculeType, SSType};
-//! use molconv::adapters::pdb::structure_file_to_entities;
+//! use molex::{MoleculeEntity, MoleculeType, SSType};
+//! use molex::adapters::pdb::structure_file_to_entities;
 //!
 //! let entities = structure_file_to_entities("1ubq.pdb")?;
 //! for e in &entities {
@@ -36,8 +36,8 @@ pub use types::entity::{
 };
 
 #[cfg(feature = "python")]
-#[pymodule(name = "molconv")]
-fn molconv(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+#[pymodule(name = "molex")]
+fn molex(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Core COORDS functions
     m.add_function(wrap_pyfunction!(python::pdb_to_coords, m)?)?;
     m.add_function(wrap_pyfunction!(python::mmcif_to_coords, m)?)?;

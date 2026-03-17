@@ -1,7 +1,7 @@
 # Render — Visualization Data
 
 The `render` module extracts GPU-ready data from `Coords` and
-`MoleculeEntity` values. It serves as the bridge between molconv's
+`MoleculeEntity` values. It serves as the bridge between molex's
 canonical types and rendering engines like viso.
 
 ## `RenderCoords`

@@ -6,20 +6,20 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-molconv = { git = "https://github.com/petridecus/molconv" }
+molex = { git = "https://github.com/petridecus/molex" }
 ```
 
 ## As a Python package
 
-molconv provides optional Python bindings via PyO3/maturin.
+molex provides optional Python bindings via PyO3/maturin.
 
 ```bash
 # Build and install the wheel
-cd crates/molconv
+cd crates/molex
 maturin develop --release --features python
 
 # Verify
-python -c "import molconv; print('OK')"
+python -c "import molex; print('OK')"
 ```
 
 ## Feature flags

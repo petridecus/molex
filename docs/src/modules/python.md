@@ -1,12 +1,12 @@
 # Python Bindings
 
-molconv provides Python bindings via PyO3, enabled with the `python`
+molex provides Python bindings via PyO3, enabled with the `python`
 feature flag. The module is built with maturin.
 
 ## Installation
 
 ```bash
-cd crates/molconv
+cd crates/molex
 maturin develop --release --features python
 ```
 
@@ -29,7 +29,7 @@ Convert COORDS01 bytes back to a PDB-format string.
 Deserialize COORDS01 bytes into a Python dictionary with NumPy arrays:
 
 ```python
-result = molconv.deserialize_coords(coords_bytes)
+result = molex.deserialize_coords(coords_bytes)
 # result["num_atoms"]: int
 # result["x"], result["y"], result["z"]: np.ndarray[f32]
 ```

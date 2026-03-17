@@ -1,6 +1,6 @@
 # Architecture Overview
 
-molconv is organized as a layered conversion pipeline. Raw file bytes
+molex is organized as a layered conversion pipeline. Raw file bytes
 enter through adapters, pass through a canonical intermediate
 representation, and exit as either transformed coordinates, render-ready
 geometry, or binary-serialized bytes.
@@ -77,7 +77,7 @@ bond connectivity. Bridge between `Coords` and GPU renderers.
 
 ## Binary formats
 
-molconv defines two compact binary formats for IPC:
+molex defines two compact binary formats for IPC:
 
 - **COORDS01** — single molecule: magic + atom data (26 bytes/atom)
 - **ASSEM01** — multi-entity assembly: magic + entity headers + atom data

@@ -53,18 +53,18 @@ let density = mrc_file_to_density("map.mrc")?;
 
 ## AtomWorks (`adapters::atomworks`)
 
-Bidirectional conversion between molconv entities and Biotite
+Bidirectional conversion between molex entities and Biotite
 `AtomArray` objects (via PyO3). Used by ML model pipelines
 (RF3, RFdiffusion3, LigandMPNN).
 
 ```python
-import molconv
+import molex
 
-# molconv → AtomArray (for model inference)
-atom_array = molconv.entities_to_atom_array(assembly_bytes)
+# molex → AtomArray (for model inference)
+atom_array = molex.entities_to_atom_array(assembly_bytes)
 
-# AtomArray → molconv (after prediction)
-assembly_bytes = molconv.atom_array_to_entities(atom_array)
+# AtomArray → molex (after prediction)
+assembly_bytes = molex.atom_array_to_entities(atom_array)
 ```
 
 Feature-gated behind `python`.

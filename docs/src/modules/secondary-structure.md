@@ -24,7 +24,7 @@ from backbone N-H...O=C geometry and assigns secondary structure
 based on the standard DSSP criteria.
 
 ```rust,ignore
-use molconv::secondary_structure::dssp;
+use molex::secondary_structure::dssp;
 
 // From a MoleculeEntity
 let ss: Vec<SSType> = dssp::from_entity(&entity);
@@ -39,7 +39,7 @@ Fallback method using dihedral angle (phi/psi) ranges when full
 DSSP is not needed:
 
 ```rust,ignore
-use molconv::secondary_structure::auto::detect;
+use molex::secondary_structure::auto::detect;
 
 let ss: Vec<SSType> = detect(&backbone_residues);
 ```
@@ -50,7 +50,7 @@ The `resolve()` function merges DSSP output with optional per-entity
 Q8 overrides:
 
 ```rust,ignore
-use molconv::secondary_structure::{resolve, DetectionInput};
+use molex::secondary_structure::{resolve, DetectionInput};
 
 let input = DetectionInput { entity, override_q8: Some("HHHCCCEEE") };
 let ss = resolve(&input);

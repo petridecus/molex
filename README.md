@@ -1,8 +1,9 @@
-# molconv
+# molex
 
-Rust library for parsing, transforming, and serializing molecular
-structure data. Provides a unified type system for proteins, nucleic
-acids, ligands, and other biomolecules across multiple file formats.
+**Mol**ecular **ex**change — a Rust library for parsing, transforming,
+and serializing molecular structure data. Provides a unified type system
+for proteins, nucleic acids, ligands, and other biomolecules across
+multiple file formats.
 
 ## Features
 
@@ -16,8 +17,8 @@ acids, ligands, and other biomolecules across multiple file formats.
 ## Quick start
 
 ```rust
-use molconv::{MoleculeEntity, MoleculeType};
-use molconv::adapters::pdb::structure_file_to_entities;
+use molex::{MoleculeEntity, MoleculeType};
+use molex::adapters::pdb::structure_file_to_entities;
 
 let entities = structure_file_to_entities("1ubq.pdb".as_ref())?;
 for e in &entities {

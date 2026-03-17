@@ -1,6 +1,6 @@
-# molconv
+# molex
 
-**molconv** is a Rust library for parsing, transforming, and serializing
+**molex** is a Rust library for parsing, transforming, and serializing
 molecular structure data. It provides a unified type system for working
 with proteins, nucleic acids, ligands, and other biomolecules across
 multiple file formats.
@@ -36,7 +36,7 @@ multiple file formats.
 ## Crate structure
 
 ```
-molconv/
+molex/
 ├── types/              Core data structures (Coords, Entity, Density)
 ├── adapters/           Format I/O (PDB, mmCIF, BinaryCIF, DCD, MRC, AtomWorks)
 ├── cif/                CIF/STAR parser and typed extractors

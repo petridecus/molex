@@ -1,7 +1,7 @@
 # Data Flow
 
 This page traces the typical lifecycle of molecular data through
-molconv, from file input to render-ready output.
+molex, from file input to render-ready output.
 
 ## 1. Parsing
 
@@ -19,13 +19,13 @@ The binary `Vec<u8>` is the COORDS01 format. Deserialize it to get
 the `Coords` struct:
 
 ```rust,ignore
-let coords = molconv::types::coords::deserialize(&bytes)?;
+let coords = molex::types::coords::deserialize(&bytes)?;
 ```
 
 ## 2. Entity classification
 
 ```rust,ignore
-let entities = molconv::types::entity::split_into_entities(&coords);
+let entities = molex::types::entity::split_into_entities(&coords);
 // entities: Vec<MoleculeEntity>
 // Each entity has: entity_id, molecule_type, kind (Polymer or AtomSet)
 ```
@@ -77,10 +77,10 @@ For IPC with C++ backends or storage:
 
 ```rust,ignore
 // Single molecule
-let bytes = molconv::types::coords::serialize(&coords)?;
+let bytes = molex::types::coords::serialize(&coords)?;
 
 // Multi-entity assembly
-let bytes = molconv::types::coords::serialize_assembly(&entities)?;
+let bytes = molex::types::coords::serialize_assembly(&entities)?;
 ```
 
 ## Pipeline summary

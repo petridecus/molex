@@ -43,7 +43,7 @@ typedef struct {
 ## Usage from C++
 
 ```cpp
-#include "molconv.h"
+#include "molex.h"
 
 auto result = coords_from_backbone(
     positions.data(), n_atoms,

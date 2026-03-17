@@ -1,6 +1,6 @@
 # Types — Core Data Structures
 
-The `types` module contains molconv's canonical data representations.
+The `types` module contains molex's canonical data representations.
 
 ## `types::coords` — Atom-Level Data
 

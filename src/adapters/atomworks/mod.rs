@@ -1,6 +1,6 @@
 //! AtomWorks adapter for RC-Foundry / ModelForge models.
 //!
-//! Bidirectional conversion between molconv's `Vec<MoleculeEntity>` and
+//! Bidirectional conversion between molex's `Vec<MoleculeEntity>` and
 //! AtomWorks-annotated Biotite `AtomArray` objects.
 //!
 //! Unlike the plain biotite adapter (which converts flat `Coords` bytes and
@@ -20,18 +20,18 @@
 //! # Usage from Python (via PyO3)
 //!
 //! ```python
-//! import molconv
+//! import molex
 //! from atomworks.io.parser import parse as aw_parse
 //!
-//! # ── molconv → AtomWorks (for model inference) ──
-//! atom_array = molconv.entities_to_atom_array(assembly_bytes)
-//! atom_array_plus = molconv.entities_to_atom_array_plus(assembly_bytes)
+//! # ── molex → AtomWorks (for model inference) ──
+//! atom_array = molex.entities_to_atom_array(assembly_bytes)
+//! atom_array_plus = molex.entities_to_atom_array_plus(assembly_bytes)
 //!
-//! # ── AtomArray → molconv (after model prediction) ──
-//! assembly_bytes = molconv.atom_array_to_entities(atom_array)
+//! # ── AtomArray → molex (after model prediction) ──
+//! assembly_bytes = molex.atom_array_to_entities(atom_array)
 //!
 //! # ── Full AtomWorks cleaning pipeline ──
-//! atom_array = molconv.entities_to_atom_array_parsed(assembly_bytes, "3nez.cif.gz")
+//! atom_array = molex.entities_to_atom_array_parsed(assembly_bytes, "3nez.cif.gz")
 //! ```
 
 mod from_array;

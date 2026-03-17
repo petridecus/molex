@@ -6,7 +6,7 @@ extraction. It operates in two layers.
 ## Layer 1 — DOM parsing (`cif::parse`)
 
 ```rust,ignore
-let doc = molconv::cif::parse(input)?;
+let doc = molex::cif::parse(input)?;
 ```
 
 Parses any CIF or STAR file into an untyped `Document` tree:
@@ -24,7 +24,7 @@ mmCIF, CCD, reflection data, or any STAR-format file.
 Pull structured data from a parsed `Block`:
 
 ```rust,ignore
-use molconv::cif::extract::{CoordinateData, CifContent};
+use molex::cif::extract::{CoordinateData, CifContent};
 
 // Caller knows the content type:
 let coords = CoordinateData::try_from(&block)?;

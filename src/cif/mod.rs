@@ -8,7 +8,7 @@
 //!   [`CifContent`].
 //!
 //! ```ignore
-//! let doc = molconv::cif::parse(input)?;
+//! let doc = molex::cif::parse(input)?;
 //! let block = &doc.blocks[0];
 //!
 //! // Caller knows what they have:

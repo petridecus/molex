@@ -3,8 +3,8 @@
 ## Parse a PDB file
 
 ```rust,ignore
-use molconv::adapters::pdb::structure_file_to_coords;
-use molconv::types::entity::split_into_entities;
+use molex::adapters::pdb::structure_file_to_coords;
+use molex::types::entity::split_into_entities;
 
 // Parse any PDB or mmCIF file
 let coords = structure_file_to_coords("1ubq.pdb")?;
@@ -24,7 +24,7 @@ for entity in &entities {
 ## Extract backbone chains
 
 ```rust,ignore
-use molconv::ops::transform::{protein_only, extract_backbone_chains};
+use molex::ops::transform::{protein_only, extract_backbone_chains};
 
 let protein_coords = protein_only(&coords);
 let chains = extract_backbone_chains(&protein_coords);
@@ -36,7 +36,7 @@ for (i, chain) in chains.iter().enumerate() {
 ## Compute secondary structure
 
 ```rust,ignore
-use molconv::secondary_structure::dssp::from_entity;
+use molex::secondary_structure::dssp::from_entity;
 
 let ss_types = from_entity(&entities[0]);
 for (i, ss) in ss_types.iter().enumerate() {
@@ -47,8 +47,8 @@ for (i, ss) in ss_types.iter().enumerate() {
 ## Convert between formats
 
 ```rust,ignore
-use molconv::adapters::pdb::{pdb_to_coords, coords_to_pdb};
-use molconv::types::coords::{serialize, deserialize};
+use molex::adapters::pdb::{pdb_to_coords, coords_to_pdb};
+use molex::types::coords::{serialize, deserialize};
 
 // PDB string → binary COORDS
 let coords_bytes = pdb_to_coords(pdb_string)?;
@@ -63,13 +63,13 @@ let pdb_out = coords_to_pdb(&coords_bytes)?;
 ## Python usage
 
 ```python
-import molconv
+import molex
 
 # PDB round-trip
-coords_bytes = molconv.pdb_to_coords(pdb_string)
-pdb_back = molconv.coords_to_pdb(coords_bytes)
+coords_bytes = molex.pdb_to_coords(pdb_string)
+pdb_back = molex.coords_to_pdb(coords_bytes)
 
 # Entity-aware AtomArray conversion (for ML pipelines)
-atom_array = molconv.entities_to_atom_array(assembly_bytes)
-assembly_bytes = molconv.atom_array_to_entities(atom_array)
+atom_array = molex.entities_to_atom_array(assembly_bytes)
+assembly_bytes = molex.atom_array_to_entities(atom_array)
 ```

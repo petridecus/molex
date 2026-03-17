@@ -1,9 +1,9 @@
 [package]
-name = "molconv"
+name = "molex"
 version = "0.1.0"
 edition = "2021"
 authors = ["Andreas Petrides"]
-description = "Coordinate format conversion library for molecular structures"
+description = "Molecular exchange: parsing, transforming, and serializing molecular structure data"
 license = "MIT"
 repository = "https://github.com/petridecus/molconv"
 readme = "README.md"
@@ -11,7 +11,7 @@ keywords = ["protein", "molecular", "pdb", "mmcif", "structure"]
 categories = ["science", "parser-implementations", "data-structures"]
 
 [lib]
-name = "molconv"
+name = "molex"
 crate-type = ["rlib"]
 
 [dependencies]

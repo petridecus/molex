@@ -1,4 +1,4 @@
-//! Core data types for the molconv crate.
+//! Core data types for the molex crate.
 
 pub mod assembly;
 pub mod coords;
