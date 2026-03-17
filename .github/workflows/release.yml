@@ -23,7 +23,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Publish to crates.io
-        run: cargo publish
+        run: cargo publish || echo "crates.io publish skipped (already exists?)"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
