@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a3c85a9d.js";
+            window.path_to_searchindex_js = "../searchindex-056f3aa0.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-5b1e16ba.js"></script>
+        <script src="../toc-27f43c42.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,50 +178,57 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="quick-start"><a class="header" href="#quick-start">Quick Start</a></h1>
-<h2 id="parse-a-pdb-file"><a class="header" href="#parse-a-pdb-file">Parse a PDB file</a></h2>
-<pre><code class="language-rust ignore">use molex::adapters::pdb::structure_file_to_coords;
-use molex::types::entity::split_into_entities;
+<h2 id="parse-a-pdb-file-into-entities"><a class="header" href="#parse-a-pdb-file-into-entities">Parse a PDB file into entities</a></h2>
+<pre><code class="language-rust ignore">use molex::adapters::pdb::pdb_file_to_entities;
+use std::path::Path;
 
-// Parse any PDB or mmCIF file
-let coords = structure_file_to_coords("1ubq.pdb")?;
+let entities = pdb_file_to_entities(Path::new("1ubq.pdb"))?;
+for e in &amp;entities {
+    println!("{}: {} atoms", e.label(), e.atom_count());
+}
+// Output:
+//   Protein A: 660 atoms
+//   Water (58 molecules): 58 atoms</code></pre>
+<h2 id="auto-detect-format-by-extension"><a class="header" href="#auto-detect-format-by-extension">Auto-detect format by extension</a></h2>
+<p><code>structure_file_to_entities</code> dispatches on <code>.pdb</code>/<code>.ent</code> vs mmCIF:</p>
+<pre><code class="language-rust ignore">use molex::adapters::pdb::structure_file_to_entities;
+use std::path::Path;
 
-// Split into classified entities (protein, ligand, water, etc.)
-let entities = split_into_entities(&amp;coords);
-for entity in &amp;entities {
+let entities = structure_file_to_entities(Path::new("3nez.cif"))?;</code></pre>
+<h2 id="work-with-entities"><a class="header" href="#work-with-entities">Work with entities</a></h2>
+<pre><code class="language-rust ignore">use molex::{MoleculeEntity, MoleculeType};
+
+// Filter to protein chains
+let proteins: Vec&lt;_&gt; = entities.iter()
+    .filter(|e| e.molecule_type() == MoleculeType::Protein)
+    .collect();
+
+// Access protein-specific data
+for entity in &amp;proteins {
+    let protein = entity.as_protein().unwrap();
+    let backbone = protein.to_backbone();
     println!(
-        "Entity {}: {:?} ({} atoms)",
-        entity.entity_id,
-        entity.molecule_type,
-        entity.atom_count(),
+        "Chain {}: {} residues, {} segments",
+        protein.pdb_chain_id as char,
+        protein.residues.len(),
+        protein.segment_count(),
     );
 }</code></pre>
-<h2 id="extract-backbone-chains"><a class="header" href="#extract-backbone-chains">Extract backbone chains</a></h2>
-<pre><code class="language-rust ignore">use molex::ops::transform::{protein_only, extract_backbone_chains};
+<h2 id="run-dssp-secondary-structure-assignment"><a class="header" href="#run-dssp-secondary-structure-assignment">Run DSSP secondary structure assignment</a></h2>
+<pre><code class="language-rust ignore">use molex::analysis::{detect_dssp, SSType};
 
-let protein_coords = protein_only(&amp;coords);
-let chains = extract_backbone_chains(&amp;protein_coords);
-for (i, chain) in chains.iter().enumerate() {
-    println!("Chain {}: {} CA positions", i, chain.len());
-}</code></pre>
-<h2 id="compute-secondary-structure"><a class="header" href="#compute-secondary-structure">Compute secondary structure</a></h2>
-<pre><code class="language-rust ignore">use molex::secondary_structure::dssp::from_entity;
-
-let ss_types = from_entity(&amp;entities[0]);
+let protein = entities[0].as_protein().unwrap();
+let backbone = protein.to_backbone();
+let (ss_types, hbonds) = detect_dssp(&amp;backbone);
 for (i, ss) in ss_types.iter().enumerate() {
-    println!("Residue {}: {:?}", i, ss);
+    println!("Residue {}: {:?}", i, ss); // Helix, Sheet, or Coil
 }</code></pre>
-<h2 id="convert-between-formats"><a class="header" href="#convert-between-formats">Convert between formats</a></h2>
-<pre><code class="language-rust ignore">use molex::adapters::pdb::{pdb_to_coords, coords_to_pdb};
-use molex::types::coords::{serialize, deserialize};
+<h2 id="serialize-to-coords-binary-for-ffiipc"><a class="header" href="#serialize-to-coords-binary-for-ffiipc">Serialize to COORDS binary (for FFI/IPC)</a></h2>
+<pre><code class="language-rust ignore">use molex::ops::codec::{serialize, merge_entities};
 
-// PDB string → binary COORDS
-let coords_bytes = pdb_to_coords(pdb_string)?;
-
-// Binary COORDS → Coords struct
-let coords = deserialize(&amp;coords_bytes)?;
-
-// Coords struct → PDB string
-let pdb_out = coords_to_pdb(&amp;coords_bytes)?;</code></pre>
+let coords = merge_entities(&amp;entities);
+let bytes = serialize(&amp;coords)?;
+// Send `bytes` over FFI, IPC, or network</code></pre>
 <h2 id="python-usage"><a class="header" href="#python-usage">Python usage</a></h2>
 <pre><code class="language-python">import molex
 
@@ -238,11 +245,11 @@ assembly_bytes = molex.atom_array_to_entities(atom_array)
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../getting-started/installation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../getting-started/installation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../architecture/overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -252,11 +259,11 @@ assembly_bytes = molex.atom_array_to_entities(atom_array)
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../getting-started/installation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../getting-started/installation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../architecture/overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -269,6 +276,22 @@ assembly_bytes = molex.atom_array_to_entities(atom_array)
         <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
         <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
 
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
 
 
         <script>

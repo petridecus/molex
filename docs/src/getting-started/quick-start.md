@@ -1,63 +1,75 @@
 # Quick Start
 
-## Parse a PDB file
+## Parse a PDB file into entities
 
 ```rust,ignore
-use molex::adapters::pdb::structure_file_to_coords;
-use molex::types::entity::split_into_entities;
+use molex::adapters::pdb::pdb_file_to_entities;
+use std::path::Path;
 
-// Parse any PDB or mmCIF file
-let coords = structure_file_to_coords("1ubq.pdb")?;
+let entities = pdb_file_to_entities(Path::new("1ubq.pdb"))?;
+for e in &entities {
+    println!("{}: {} atoms", e.label(), e.atom_count());
+}
+// Output:
+//   Protein A: 660 atoms
+//   Water (58 molecules): 58 atoms
+```
 
-// Split into classified entities (protein, ligand, water, etc.)
-let entities = split_into_entities(&coords);
-for entity in &entities {
+## Auto-detect format by extension
+
+`structure_file_to_entities` dispatches on `.pdb`/`.ent` vs mmCIF:
+
+```rust,ignore
+use molex::adapters::pdb::structure_file_to_entities;
+use std::path::Path;
+
+let entities = structure_file_to_entities(Path::new("3nez.cif"))?;
+```
+
+## Work with entities
+
+```rust,ignore
+use molex::{MoleculeEntity, MoleculeType};
+
+// Filter to protein chains
+let proteins: Vec<_> = entities.iter()
+    .filter(|e| e.molecule_type() == MoleculeType::Protein)
+    .collect();
+
+// Access protein-specific data
+for entity in &proteins {
+    let protein = entity.as_protein().unwrap();
+    let backbone = protein.to_backbone();
     println!(
-        "Entity {}: {:?} ({} atoms)",
-        entity.entity_id,
-        entity.molecule_type,
-        entity.atom_count(),
+        "Chain {}: {} residues, {} segments",
+        protein.pdb_chain_id as char,
+        protein.residues.len(),
+        protein.segment_count(),
     );
 }
 ```
 
-## Extract backbone chains
+## Run DSSP secondary structure assignment
 
 ```rust,ignore
-use molex::ops::transform::{protein_only, extract_backbone_chains};
+use molex::analysis::{detect_dssp, SSType};
 
-let protein_coords = protein_only(&coords);
-let chains = extract_backbone_chains(&protein_coords);
-for (i, chain) in chains.iter().enumerate() {
-    println!("Chain {}: {} CA positions", i, chain.len());
-}
-```
-
-## Compute secondary structure
-
-```rust,ignore
-use molex::secondary_structure::dssp::from_entity;
-
-let ss_types = from_entity(&entities[0]);
+let protein = entities[0].as_protein().unwrap();
+let backbone = protein.to_backbone();
+let (ss_types, hbonds) = detect_dssp(&backbone);
 for (i, ss) in ss_types.iter().enumerate() {
-    println!("Residue {}: {:?}", i, ss);
+    println!("Residue {}: {:?}", i, ss); // Helix, Sheet, or Coil
 }
 ```
 
-## Convert between formats
+## Serialize to COORDS binary (for FFI/IPC)
 
 ```rust,ignore
-use molex::adapters::pdb::{pdb_to_coords, coords_to_pdb};
-use molex::types::coords::{serialize, deserialize};
+use molex::ops::codec::{serialize, merge_entities};
 
-// PDB string → binary COORDS
-let coords_bytes = pdb_to_coords(pdb_string)?;
-
-// Binary COORDS → Coords struct
-let coords = deserialize(&coords_bytes)?;
-
-// Coords struct → PDB string
-let pdb_out = coords_to_pdb(&coords_bytes)?;
+let coords = merge_entities(&entities);
+let bytes = serialize(&coords)?;
+// Send `bytes` over FFI, IPC, or network
 ```
 
 ## Python usage

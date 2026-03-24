@@ -9,7 +9,7 @@ use std::path::Path;
 
 use ndarray::Array3;
 
-use crate::types::density::{DensityError, DensityMap};
+use crate::entity::surface::density::{Density, DensityError, VoxelGrid};
 
 const HEADER_SIZE: usize = 1024;
 const MAP_MAGIC: &[u8; 4] = b"MAP ";
@@ -40,7 +40,7 @@ fn hf32(b: &[u8], le: bool) -> f32 {
 ///
 /// Returns [`DensityError`] if the file cannot be read or does not contain a
 /// valid MRC/CCP4 density map.
-pub fn mrc_file_to_density(path: &Path) -> Result<DensityMap, DensityError> {
+pub fn mrc_file_to_density(path: &Path) -> Result<Density, DensityError> {
     let bytes = fs::read(path)?;
     mrc_to_density(&bytes)
 }
@@ -172,7 +172,7 @@ fn parse_mrc_header(bytes: &[u8]) -> Result<MrcHeader, DensityError> {
 /// Returns [`DensityError`] if the bytes do not represent a valid MRC/CCP4
 /// density map (e.g. missing magic, unsupported mode, truncated data).
 #[allow(clippy::cast_sign_loss, reason = "header validated positive")]
-pub fn mrc_to_density(bytes: &[u8]) -> Result<DensityMap, DensityError> {
+pub fn mrc_to_density(bytes: &[u8]) -> Result<Density, DensityError> {
     let h = parse_mrc_header(bytes)?;
 
     let data_offset = HEADER_SIZE + h.nsymbt as usize;
@@ -190,25 +190,27 @@ pub fn mrc_to_density(bytes: &[u8]) -> Result<DensityMap, DensityError> {
 
     let fs = [h.ncstart, h.nrstart, h.nsstart];
     let (mc, mr, ms) = (h.mapc as usize, h.mapr as usize, h.maps as usize);
-    Ok(DensityMap {
-        nx,
-        ny,
-        nz,
-        nxstart: fs[axis_file_index(mc, mr, ms, 1)],
-        nystart: fs[axis_file_index(mc, mr, ms, 2)],
-        nzstart: fs[axis_file_index(mc, mr, ms, 3)],
-        mx: h.mx as usize,
-        my: h.my as usize,
-        mz: h.mz as usize,
-        cell_dims: h.cell_dims,
-        cell_angles: h.cell_angles,
+    Ok(Density {
+        grid: VoxelGrid {
+            nx,
+            ny,
+            nz,
+            nxstart: fs[axis_file_index(mc, mr, ms, 1)],
+            nystart: fs[axis_file_index(mc, mr, ms, 2)],
+            nzstart: fs[axis_file_index(mc, mr, ms, 3)],
+            mx: h.mx as usize,
+            my: h.my as usize,
+            mz: h.mz as usize,
+            cell_dims: h.cell_dims,
+            cell_angles: h.cell_angles,
+            origin: h.origin,
+            data,
+        },
         dmin: h.dmin,
         dmax: h.dmax,
         dmean: h.dmean,
         rms: h.rms,
-        origin: h.origin,
         space_group: h.space_group,
-        data,
     })
 }
 

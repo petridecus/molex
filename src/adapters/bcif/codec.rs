@@ -7,7 +7,7 @@
 
 use std::io::Read;
 
-use crate::types::coords::CoordsError;
+use crate::ops::codec::CoordsError;
 
 // ---------------------------------------------------------------------------
 // Lightweight MessagePack value tree

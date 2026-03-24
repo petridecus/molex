@@ -1,7 +1,6 @@
 # Python Bindings
 
-molex provides Python bindings via PyO3, enabled with the `python`
-feature flag. The module is built with maturin.
+Python bindings are available when molex is built with the `python` feature. The module is exposed as `import molex` via PyO3.
 
 ## Installation
 
@@ -10,69 +9,71 @@ cd crates/molex
 maturin develop --release --features python
 ```
 
-## Core functions
+## Core COORDS functions (`python.rs`)
 
-### `pdb_to_coords(pdb_string) → bytes`
-
-Parse a PDB string and return COORDS01 binary bytes.
-
-### `mmcif_to_coords(cif_string) → bytes`
-
-Parse an mmCIF string and return COORDS01 binary bytes.
-
-### `coords_to_pdb(coords_bytes) → str`
-
-Convert COORDS01 bytes back to a PDB-format string.
-
-### `deserialize_coords(coords_bytes) → dict`
-
-Deserialize COORDS01 bytes into a Python dictionary with NumPy arrays:
+These operate on serialized COORDS bytes:
 
 ```python
-result = molex.deserialize_coords(coords_bytes)
-# result["num_atoms"]: int
-# result["x"], result["y"], result["z"]: np.ndarray[f32]
+import molex
+
+# Parse PDB string to COORDS bytes
+coords_bytes = molex.pdb_to_coords(pdb_string)
+
+# Parse mmCIF string to COORDS bytes
+coords_bytes = molex.mmcif_to_coords(cif_string)
+
+# Convert COORDS bytes to PDB string
+pdb_string = molex.coords_to_pdb(coords_bytes)
+
+# Round-trip validation
+validated = molex.deserialize_coords_py(coords_bytes)
 ```
 
-## AtomWorks adapters
+## AtomWorks interop (`adapters::atomworks`)
 
-For ML model pipelines that use Biotite `AtomArray` objects:
+Entity-aware conversions between molex's ASSEM01 binary format and Biotite `AtomArray` objects with AtomWorks annotations (`entity_id`, `mol_type`, `pn_unit_iid`, `chain_type`).
 
-### `entities_to_atom_array(assembly_bytes) → AtomArray`
+### molex -> AtomWorks
 
-Convert ASSEM01 bytes to a Biotite AtomArray with standard and
-AtomWorks-specific annotations (entity_id, mol_type, chain_type).
+```python
+import molex
 
-### `entities_to_atom_array_plus(assembly_bytes) → AtomArray`
+# Convert ASSEM01 bytes to AtomArray (basic annotations)
+atom_array = molex.entities_to_atom_array(assembly_bytes)
 
-Like `entities_to_atom_array` but also populates bonds via distance
-inference.
+# Convert with full bond list and chain type annotations
+atom_array = molex.entities_to_atom_array_plus(assembly_bytes)
 
-### `atom_array_to_entities(atom_array) → bytes`
+# Convert with AtomWorks cleaning pipeline (leaving group removal,
+# charge correction, missing atom imputation)
+atom_array = molex.entities_to_atom_array_parsed(assembly_bytes, "3nez.cif.gz")
+```
 
-Convert a Biotite AtomArray back to ASSEM01 bytes.
+### AtomWorks -> molex
 
-### `entities_to_atom_array_parsed(assembly_bytes, filename) → AtomArray`
+```python
+# Convert AtomArray back to ASSEM01 bytes (preserves entity metadata)
+assembly_bytes = molex.atom_array_to_entities(atom_array)
+```
 
-Convert via the full AtomWorks cleaning pipeline (leaving group
-removal, charge correction, missing atom imputation).
+### File-based shortcuts
 
-### `parse_file_to_entities(path) → bytes`
+```python
+# Parse structure file directly to ASSEM01 bytes via AtomWorks
+assembly_bytes = molex.parse_file_to_entities("3nez.cif.gz")
 
-Parse a structure file (PDB/mmCIF) directly to ASSEM01 bytes.
+# Parse to AtomArray with full AtomWorks pipeline
+atom_array = molex.parse_file_full("3nez.cif.gz")
+```
 
-### `parse_file_full(path) → AtomArray`
+### Flat Coords functions
 
-Parse a structure file through the full AtomWorks pipeline.
+Flat Coords-based conversions are available for working with the COORDS01 format directly:
 
-### `coords_to_atom_array(coords_bytes) → AtomArray`
+```python
+atom_array = molex.coords_to_atom_array(coords_bytes)
+atom_array = molex.coords_to_atom_array_plus(coords_bytes)
+assembly_bytes = molex.atom_array_to_coords(atom_array)
+```
 
-Convert single-molecule COORDS01 bytes to AtomArray.
-
-### `coords_to_atom_array_plus(coords_bytes) → AtomArray`
-
-Like `coords_to_atom_array` with bond inference.
-
-### `atom_array_to_coords(atom_array) → bytes`
-
-Convert AtomArray to single-molecule COORDS01 bytes.
+These operate on the flat COORDS01 format and do not include entity metadata.

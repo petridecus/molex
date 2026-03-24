@@ -6,9 +6,12 @@
 use pyo3::prelude::*;
 
 use super::{molecule_type_to_chain_type_id, molecule_type_to_mol_type_str};
-use crate::ops::bond_inference::{infer_bonds, BondOrder, DEFAULT_TOLERANCE};
-use crate::types::coords::{deserialize, deserialize_assembly, Element};
-use crate::types::entity::{split_into_entities, MoleculeEntity, MoleculeType};
+use crate::analysis::bonds::{infer_bonds, BondOrder, DEFAULT_TOLERANCE};
+use crate::element::Element;
+use crate::entity::molecule::{MoleculeEntity, MoleculeType};
+use crate::ops::codec::{
+    deserialize, deserialize_assembly, split_into_entities,
+};
 
 /// Flat per-atom annotation data collected from entities.
 pub(crate) struct AtomData {
@@ -56,7 +59,7 @@ pub(crate) fn collect_atom_data(
     for entity in entities {
         let c = entity.to_coords();
         append_entity_atoms(&mut data, entity, &c);
-        append_entity_bonds(&mut data, entity, &c, atom_offset);
+        append_entity_bonds(&mut data, entity, atom_offset);
         atom_offset += c.num_atoms;
     }
 
@@ -67,13 +70,13 @@ pub(crate) fn collect_atom_data(
 fn append_entity_atoms(
     data: &mut AtomData,
     entity: &MoleculeEntity,
-    c: &crate::types::coords::Coords,
+    c: &crate::ops::codec::Coords,
 ) {
-    let entity_id = entity.entity_id.cast_signed();
+    let entity_id = entity.id().raw().cast_signed();
     let mol_type_str =
-        molecule_type_to_mol_type_str(entity.molecule_type).to_owned();
+        molecule_type_to_mol_type_str(entity.molecule_type()).to_owned();
     let chain_type_id =
-        i32::from(molecule_type_to_chain_type_id(entity.molecule_type));
+        i32::from(molecule_type_to_chain_type_id(entity.molecule_type()));
 
     for i in 0..c.num_atoms {
         let atom = &c.atoms[i];
@@ -118,16 +121,16 @@ fn append_entity_atoms(
 fn append_entity_bonds(
     data: &mut AtomData,
     entity: &MoleculeEntity,
-    c: &crate::types::coords::Coords,
     atom_offset: usize,
 ) {
     let needs_inference = matches!(
-        entity.molecule_type,
+        entity.molecule_type(),
         MoleculeType::Ligand | MoleculeType::Cofactor | MoleculeType::Ion
     );
 
-    if needs_inference && c.num_atoms >= 2 && c.num_atoms <= 500 {
-        let inferred = infer_bonds(c, DEFAULT_TOLERANCE);
+    let atoms = entity.atom_set();
+    if needs_inference && atoms.len() >= 2 && atoms.len() <= 500 {
+        let inferred = infer_bonds(atoms, DEFAULT_TOLERANCE);
         for bond in &inferred {
             let bt = match bond.order {
                 BondOrder::Single => 1u8,

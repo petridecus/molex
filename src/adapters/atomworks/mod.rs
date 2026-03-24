@@ -48,7 +48,7 @@ pub use to_array::{
     entities_to_atom_array_parsed, entities_to_atom_array_plus,
 };
 
-use crate::types::entity::MoleculeType;
+use crate::entity::molecule::MoleculeType;
 
 // ============================================================================
 // Molecule type ↔ AtomWorks chain type mapping

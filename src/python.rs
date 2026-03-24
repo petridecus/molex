@@ -2,8 +2,8 @@
 
 use pyo3::prelude::*;
 
-use crate::adapters::pdb;
-use crate::types::coords::{deserialize, serialize};
+use crate::adapters::{cif, pdb};
+use crate::ops::codec::{deserialize, serialize};
 
 /// Deserialize and re-serialize COORDS bytes (round-trip validation).
 ///
@@ -42,7 +42,7 @@ pub fn pdb_to_coords(pdb_str: String) -> PyResult<Vec<u8>> {
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
 pub fn mmcif_to_coords(cif_str: String) -> PyResult<Vec<u8>> {
-    pdb::mmcif_to_coords(&cif_str).map_err(|e| {
+    cif::mmcif_to_coords(&cif_str).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })
 }

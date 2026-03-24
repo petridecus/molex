@@ -14,10 +14,48 @@ use std::path::Path;
 
 use codec::{decode_column, decode_msgpack, ColData, MsgVal};
 
-use crate::types::coords::{
-    ChainIdMapper, Coords, CoordsAtom, CoordsError, Element,
+use crate::element::Element;
+use crate::entity::molecule::MoleculeEntity;
+use crate::ops::codec::{
+    merge_entities, split_into_entities, ChainIdMapper, Coords, CoordsAtom,
+    CoordsError,
 };
-use crate::types::entity::{split_into_entities, MoleculeEntity};
+
+// ---------------------------------------------------------------------------
+// Entity-first API (primary)
+// ---------------------------------------------------------------------------
+
+/// Decode BinaryCIF bytes to entity list.
+///
+/// # Errors
+///
+/// Returns `CoordsError::InvalidFormat` if the bytes cannot be parsed as
+/// valid BinaryCIF.
+pub fn bcif_to_entities(
+    bytes: &[u8],
+) -> Result<Vec<MoleculeEntity>, CoordsError> {
+    let coords = parse_bcif_to_coords(bytes)?;
+    Ok(split_into_entities(&coords))
+}
+
+/// Load a BinaryCIF file and convert to entity list.
+///
+/// # Errors
+///
+/// Returns `CoordsError::InvalidFormat` if the file cannot be read or parsed
+/// as valid BinaryCIF.
+pub fn bcif_file_to_entities(
+    path: &Path,
+) -> Result<Vec<MoleculeEntity>, CoordsError> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        CoordsError::InvalidFormat(format!("Failed to read file: {e}"))
+    })?;
+    bcif_to_entities(&bytes)
+}
+
+// ---------------------------------------------------------------------------
+// Coords/serialization API (derived from entities)
+// ---------------------------------------------------------------------------
 
 /// Load a BinaryCIF file and convert to Coords.
 ///
@@ -26,10 +64,8 @@ use crate::types::entity::{split_into_entities, MoleculeEntity};
 /// Returns `CoordsError::InvalidFormat` if the file cannot be read,
 /// decompressed, or parsed as valid BinaryCIF.
 pub fn bcif_file_to_coords(path: &Path) -> Result<Coords, CoordsError> {
-    let bytes = std::fs::read(path).map_err(|e| {
-        CoordsError::InvalidFormat(format!("Failed to read file: {e}"))
-    })?;
-    bcif_to_coords(&bytes)
+    let entities = bcif_file_to_entities(path)?;
+    Ok(merge_entities(&entities))
 }
 
 /// Decode BinaryCIF bytes (possibly gzipped) into a Coords struct.
@@ -39,13 +75,12 @@ pub fn bcif_file_to_coords(path: &Path) -> Result<Coords, CoordsError> {
 /// Returns `CoordsError::InvalidFormat` if the bytes cannot be decompressed
 /// or parsed as valid BinaryCIF.
 pub fn bcif_to_coords(bytes: &[u8]) -> Result<Coords, CoordsError> {
-    let data = decompress_if_gzip(bytes)?;
-    let root = decode_msgpack(&data)?;
-    parse_bcif_to_coords(&root)
+    let entities = bcif_to_entities(bytes)?;
+    Ok(merge_entities(&entities))
 }
 
 // ---------------------------------------------------------------------------
-// Gzip detection & decompression
+// Internal parsing
 // ---------------------------------------------------------------------------
 
 fn decompress_if_gzip(bytes: &[u8]) -> Result<Vec<u8>, CoordsError> {
@@ -63,16 +98,16 @@ fn decompress_if_gzip(bytes: &[u8]) -> Result<Vec<u8>, CoordsError> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// BinaryCIF → Coords conversion
-// ---------------------------------------------------------------------------
-
+/// Parse BinaryCIF bytes into flat Coords (internal).
 #[allow(
     clippy::too_many_lines,
     reason = "coordinate extraction from BinaryCIF requires processing many \
               columns"
 )]
-fn parse_bcif_to_coords(root: &MsgVal) -> Result<Coords, CoordsError> {
+fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
+    let data = decompress_if_gzip(raw_bytes)?;
+    let root = decode_msgpack(&data)?;
+
     let data_blocks = root
         .get("dataBlocks")
         .and_then(MsgVal::as_array)
@@ -290,34 +325,4 @@ fn decode_string_col(
             "Column '{name}': expected string array"
         ))),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Entity-returning variants
-// ---------------------------------------------------------------------------
-
-/// Decode BinaryCIF bytes to entity list.
-///
-/// # Errors
-///
-/// Returns `CoordsError::InvalidFormat` if the bytes cannot be parsed as
-/// valid BinaryCIF.
-pub fn bcif_to_entities(
-    bytes: &[u8],
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
-    let coords = bcif_to_coords(bytes)?;
-    Ok(split_into_entities(&coords))
-}
-
-/// Load a BinaryCIF file and convert to entity list.
-///
-/// # Errors
-///
-/// Returns `CoordsError::InvalidFormat` if the file cannot be read or parsed
-/// as valid BinaryCIF.
-pub fn bcif_file_to_entities(
-    path: &Path,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
-    let coords = bcif_file_to_coords(path)?;
-    Ok(split_into_entities(&coords))
 }

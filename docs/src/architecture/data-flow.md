@@ -1,100 +1,91 @@
 # Data Flow
 
-This page traces the typical lifecycle of molecular data through
-molex, from file input to render-ready output.
+## Overview
+
+```
+                       ┌──────────────┐
+ PDB / mmCIF / BCIF ──>│              ├──> Vec<MoleculeEntity>
+ MRC / CCP4         ──>│   Adapters   ├──> Density (SurfaceEntity)
+ DCD                ──>│              ├──> Vec<DcdFrame>
+                       └──────┬───────┘
+                              │
+                              v
+                  ┌───────────────────────┐
+                  │       Entities        │
+                  │                       │
+                  │  MoleculeEntity       │
+                  │  SurfaceEntity        │
+                  └──┬────────┬────────┬──┘
+                     │        │        │
+                     v        v        v
+              ┌──────────┐ ┌────────┐ ┌─────────┐
+              │ Analysis │ │  Ops   │ │  Codec  │
+              │          │ │        │ │         │
+              │ dssp     │ │ kabsch │ │serialize│
+              │ bonds    │ │ align  │ │serialize│
+              │ disulfide│ │extract │ │_assembly│
+              │ aabb     │ │        │ │         │
+              └──────────┘ └────────┘ └────┬────┘
+                                           │
+                                           v
+                                  FFI / IPC / Python
+```
+
+Analysis, Transform, and Codec are independent — use any combination depending on what you need.
 
 ## 1. Parsing
 
-Every supported format has a dedicated adapter that produces `Coords`:
-
-```
-PDB file  → adapters::pdb::pdb_to_coords()       → Vec<u8> (COORDS01)
-CIF file  → adapters::pdb::mmcif_to_coords()      → Vec<u8> (COORDS01)
-BCIF file → adapters::bcif::bcif_to_coords()       → Vec<u8> (COORDS01)
-DCD file  → adapters::dcd::dcd_file_to_frames()    → Vec<DcdFrame>
-MRC file  → adapters::mrc::mrc_to_density()        → DensityMap
-```
-
-The binary `Vec<u8>` is the COORDS01 format. Deserialize it to get
-the `Coords` struct:
+Every structure adapter returns `Vec<MoleculeEntity>`:
 
 ```rust,ignore
-let coords = molex::types::coords::deserialize(&bytes)?;
+let entities = pdb_file_to_entities(Path::new("1ubq.pdb"))?;
+let entities = mmcif_file_to_entities(Path::new("3nez.cif"))?;
+let entities = bcif_file_to_entities(Path::new("1ubq.bcif"))?;
 ```
 
-## 2. Entity classification
+Density and trajectory adapters return their own types:
 
 ```rust,ignore
-let entities = molex::types::entity::split_into_entities(&coords);
-// entities: Vec<MoleculeEntity>
-// Each entity has: entity_id, molecule_type, kind (Polymer or AtomSet)
+let density = mrc_file_to_density(Path::new("emd_1234.map"))?;
+let frames = dcd_file_to_frames(Path::new("trajectory.dcd"))?;
 ```
 
-Classification is based on residue name lookup — standard amino acids
-become `Protein`, nucleotides become `DNA`/`RNA`, `HOH` becomes
-`Water`, and everything else is classified as `Ligand`, `Ion`,
-`Cofactor`, etc.
+## 2. Entity splitting
 
-## 3. Transforms
+`split_into_entities` groups atoms by:
 
-The `ops::transform` module provides coordinate manipulation:
+1. Chain ID + molecule type for polymers (one entity per chain)
+2. Chain ID + residue number for small molecules (one entity each)
+3. All waters into a single `Bulk` entity
+4. All solvents into a single `Bulk` entity
+
+Each entity gets a unique `EntityId`.
+
+## 3. Analysis
 
 ```rust,ignore
-// Filter to protein-only atoms
-let protein = ops::transform::protein_only(&coords);
-
-// Kabsch superposition onto a reference
-let (aligned, rmsd) = ops::transform::kabsch_alignment(&mobile, &target);
-
-// Extract backbone chains as Vec<Vec3> (N-CA-C triples)
-let chains = ops::transform::extract_backbone_chains(&coords);
+let (ss_types, hbonds) = detect_dssp(&backbone_residues);
+let bonds = infer_bonds(&atoms, DEFAULT_TOLERANCE);
+let disulfides = detect_disulfide_bonds(&atoms);
+let aabb = entity.aabb();
 ```
 
-## 4. Secondary structure
-
-DSSP classification from backbone geometry:
+## 4. Transforms
 
 ```rust,ignore
-let ss_types: Vec<SSType> = secondary_structure::dssp::from_entity(&entity);
-// SSType::Helix, SSType::Sheet, SSType::Coil, SSType::Turn
+let (rotation, translation) = kabsch_alignment(&reference_ca, &target_ca);
+transform_entities(&mut entities, rotation, translation);
+let ca_positions = extract_ca_positions(&entities);
 ```
 
-## 5. Render extraction
+## 5. Serialization
 
-`RenderCoords` splits atoms into backbone and sidechain data suitable
-for GPU rendering:
+For sending to C/C++/Python consumers:
 
 ```rust,ignore
-let render = RenderCoords::from_entity(&entity, is_hydrophobic, get_bonds);
-// render.backbone_chains: Vec<Vec<Vec3>>  (N-CA-C per chain)
-// render.sidechain_atoms: Vec<RenderSidechainAtom>
-// render.sidechain_bonds: Vec<(u32, u32)>
-```
+// COORDS01 (flat atom array)
+let bytes = serialize(&merge_entities(&entities))?;
 
-## 6. Serialization
-
-For IPC with C++ backends or storage:
-
-```rust,ignore
-// Single molecule
-let bytes = molex::types::coords::serialize(&coords)?;
-
-// Multi-entity assembly
-let bytes = molex::types::coords::serialize_assembly(&entities)?;
-```
-
-## Pipeline summary
-
-```
-File → Adapter → Coords → split_into_entities → MoleculeEntity[]
-                    │                                   │
-                    ├──► ops::transform (align, filter)  │
-                    ├──► ops::validation (completeness)  │
-                    └──► serialize (binary IPC)          │
-                                                        ▼
-                                            secondary_structure::dssp
-                                                        │
-                                                        ▼
-                                              RenderCoords::from_entity
-                                              (backbone + sidechain data)
+// ASSEM01 (preserves entity types)
+let bytes = serialize_assembly(&entities)?;
 ```

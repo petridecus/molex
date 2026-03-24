@@ -1,76 +1,33 @@
-//! Coordinate extraction and lookup utilities.
+//! Entity-based extraction utilities.
 
 use glam::Vec3;
 
-use crate::types::coords::Coords;
+use crate::entity::molecule::protein::ProteinEntity;
+use crate::entity::molecule::MoleculeEntity;
 
-/// Extract backbone chains from COORDS data.
-///
-/// Returns a vector of chains, where each chain is a sequence of N-CA-C
-/// positions. Chain breaks are detected by chain ID change or residue number
-/// gap.
+/// Extract CA positions from protein entities.
 #[must_use]
-pub fn extract_backbone_chains(coords: &Coords) -> Vec<Vec<Vec3>> {
-    let mut chains: Vec<Vec<Vec3>> = Vec::new();
-    let mut current_chain: Vec<Vec3> = Vec::new();
-    let mut last_chain_id: Option<u8> = None;
-    let mut last_res_num: Option<i32> = None;
-
-    for i in 0..coords.num_atoms {
-        let atom_name = std::str::from_utf8(&coords.atom_names[i])
-            .unwrap_or("")
-            .trim();
-
-        // Only include N, CA, C for backbone spline (skip O and sidechains)
-        if atom_name != "N" && atom_name != "CA" && atom_name != "C" {
-            continue;
-        }
-
-        let chain_id = coords.chain_ids[i];
-        let res_num = coords.res_nums[i];
-        let pos =
-            Vec3::new(coords.atoms[i].x, coords.atoms[i].y, coords.atoms[i].z);
-
-        let is_chain_break = last_chain_id.is_some_and(|c| c != chain_id);
-        let is_sequence_gap =
-            last_res_num.is_some_and(|r| (res_num - r).abs() > 1);
-
-        if (is_chain_break || is_sequence_gap) && !current_chain.is_empty() {
-            chains.push(std::mem::take(&mut current_chain));
-        }
-
-        current_chain.push(pos);
-        last_chain_id = Some(chain_id);
-
-        if atom_name == "CA" {
-            last_res_num = Some(res_num);
-        }
-    }
-
-    if !current_chain.is_empty() {
-        chains.push(current_chain);
-    }
-
-    chains
+pub fn extract_ca_positions(entities: &[MoleculeEntity]) -> Vec<Vec3> {
+    entities
+        .iter()
+        .filter_map(MoleculeEntity::as_protein)
+        .flat_map(|p| p.to_backbone().into_iter().map(|bb| bb.ca))
+        .collect()
 }
 
-/// Extract CA positions from COORDS data.
+/// Extract backbone segments (N-CA-C interleaved) from protein entities.
+///
+/// Returns one `Vec<Vec3>` per continuous backbone segment across all
+/// protein entities.
 #[must_use]
-pub fn extract_ca_positions(coords: &Coords) -> Vec<Vec3> {
-    let mut ca_positions = Vec::new();
-    for i in 0..coords.num_atoms {
-        let atom_name = std::str::from_utf8(&coords.atom_names[i])
-            .unwrap_or("")
-            .trim();
-        if atom_name == "CA" {
-            ca_positions.push(Vec3::new(
-                coords.atoms[i].x,
-                coords.atoms[i].y,
-                coords.atoms[i].z,
-            ));
-        }
-    }
-    ca_positions
+pub fn extract_backbone_segments(
+    entities: &[MoleculeEntity],
+) -> Vec<Vec<Vec3>> {
+    entities
+        .iter()
+        .filter_map(MoleculeEntity::as_protein)
+        .flat_map(ProteinEntity::to_interleaved_segments)
+        .collect()
 }
 
 /// Extract CA positions from backbone chains (every 2nd element in N-CA-C
@@ -79,8 +36,6 @@ pub fn extract_ca_positions(coords: &Coords) -> Vec<Vec3> {
 pub fn extract_ca_from_chains(chains: &[Vec<Vec3>]) -> Vec<Vec3> {
     let mut ca_positions = Vec::new();
     for chain in chains {
-        // Backbone chains are N-CA-C pattern, so CA is every 3rd atom starting
-        // at index 1
         for (i, pos) in chain.iter().enumerate() {
             if i % 3 == 1 {
                 ca_positions.push(*pos);
@@ -88,268 +43,6 @@ pub fn extract_ca_from_chains(chains: &[Vec<Vec3>]) -> Vec<Vec3> {
         }
     }
     ca_positions
-}
-
-/// Get a single CA position by residue index from backbone chains.
-/// Returns None if residue_idx is out of bounds.
-#[must_use]
-pub fn get_ca_position_from_chains(
-    chains: &[Vec<Vec3>],
-    residue_idx: usize,
-) -> Option<Vec3> {
-    let mut current_idx = 0;
-    for chain in chains {
-        let residues_in_chain = chain.len() / 3;
-        if residue_idx < current_idx + residues_in_chain {
-            let local_idx = residue_idx - current_idx;
-            let ca_idx = local_idx * 3 + 1; // CA is at index 1 in (N, CA, C)
-            return chain.get(ca_idx).copied();
-        }
-        current_idx += residues_in_chain;
-    }
-    None
-}
-
-/// Get all backbone atom positions (N, CA, C) for a residue by index.
-/// Returns None if residue_idx is out of bounds.
-#[must_use]
-pub fn get_backbone_atoms_from_chains(
-    chains: &[Vec<Vec3>],
-    residue_idx: usize,
-) -> Option<(Vec3, Vec3, Vec3)> {
-    let mut current_idx = 0;
-    for chain in chains {
-        let residues_in_chain = chain.len() / 3;
-        if residue_idx < current_idx + residues_in_chain {
-            let local_idx = residue_idx - current_idx;
-            let base_idx = local_idx * 3;
-            let n = chain.get(base_idx).copied()?;
-            let ca = chain.get(base_idx + 1).copied()?;
-            let c = chain.get(base_idx + 2).copied()?;
-            return Some((n, ca, c));
-        }
-        current_idx += residues_in_chain;
-    }
-    None
-}
-
-/// Get the closest backbone atom position to a reference point for a residue.
-///
-/// Returns the position of N, CA, or C - whichever is closest to
-/// `reference_point`. Returns None if residue_idx is out of bounds.
-#[must_use]
-pub fn get_closest_backbone_atom(
-    chains: &[Vec<Vec3>],
-    residue_idx: usize,
-    reference_point: Vec3,
-) -> Option<Vec3> {
-    let (n, ca, c) = get_backbone_atoms_from_chains(chains, residue_idx)?;
-
-    let dist_n = n.distance_squared(reference_point);
-    let dist_ca = ca.distance_squared(reference_point);
-    let dist_c = c.distance_squared(reference_point);
-
-    if dist_n <= dist_ca && dist_n <= dist_c {
-        Some(n)
-    } else if dist_ca <= dist_c {
-        Some(ca)
-    } else {
-        Some(c)
-    }
-}
-
-/// Spatial data needed for per-residue atom proximity lookups.
-pub struct ResidueAtomSearch<'a> {
-    /// Backbone chains (N-CA-C interleaved).
-    pub chains: &'a [Vec<Vec3>],
-    /// Sidechain atom positions.
-    pub sidechain_positions: &'a [Vec3],
-    /// Per-sidechain-atom residue index.
-    pub sidechain_residue_indices: &'a [u32],
-}
-
-/// Get the closest atom (backbone or sidechain) to a reference point for a
-/// residue.
-#[must_use]
-pub fn get_closest_atom_for_residue(
-    search: &ResidueAtomSearch<'_>,
-    residue_idx: usize,
-    reference_point: Vec3,
-) -> Option<Vec3> {
-    let ResidueAtomSearch {
-        chains,
-        sidechain_positions,
-        sidechain_residue_indices,
-    } = search;
-    let mut closest: Option<(Vec3, f32)> = None;
-
-    // Check backbone atoms (N, CA, C)
-    if let Some((n, ca, c)) =
-        get_backbone_atoms_from_chains(chains, residue_idx)
-    {
-        #[allow(clippy::tuple_array_conversions)]
-        for pos in [n, ca, c] {
-            let dist = pos.distance_squared(reference_point);
-            if closest.as_ref().is_none_or(|(_, d)| dist < *d) {
-                closest = Some((pos, dist));
-            }
-        }
-    }
-
-    // Check sidechain atoms for this residue
-    #[allow(
-        clippy::cast_precision_loss,
-        reason = "residue index fits in f32 for comparison"
-    )]
-    for (i, &res_idx) in sidechain_residue_indices.iter().enumerate() {
-        if res_idx as usize == residue_idx {
-            if let Some(&pos) = sidechain_positions.get(i) {
-                let dist = pos.distance_squared(reference_point);
-                if closest.as_ref().is_none_or(|(_, d)| dist < *d) {
-                    closest = Some((pos, dist));
-                }
-            }
-        }
-    }
-
-    closest.map(|(pos, _)| pos)
-}
-
-/// Spatial data for per-residue atom proximity lookups that also carry atom
-/// names.
-pub struct NamedResidueAtomSearch<'a> {
-    /// Backbone chains (N-CA-C interleaved).
-    pub chains: &'a [Vec<Vec3>],
-    /// Sidechain atom positions.
-    pub sidechain_positions: &'a [Vec3],
-    /// Per-sidechain-atom residue index.
-    pub sidechain_residue_indices: &'a [u32],
-    /// Per-sidechain-atom name (parallel to `sidechain_positions`).
-    pub sidechain_atom_names: &'a [String],
-}
-
-/// Find the closest atom to a reference point within a residue, returning both
-/// position and atom name.
-#[must_use]
-pub fn get_closest_atom_with_name(
-    search: &NamedResidueAtomSearch<'_>,
-    residue_idx: usize,
-    reference_point: Vec3,
-) -> Option<(Vec3, String)> {
-    let NamedResidueAtomSearch {
-        chains,
-        sidechain_positions,
-        sidechain_residue_indices,
-        sidechain_atom_names,
-    } = search;
-    let mut closest: Option<(Vec3, String, f32)> = None;
-
-    // Check backbone atoms (N, CA, C)
-    if let Some((n, ca, c)) =
-        get_backbone_atoms_from_chains(chains, residue_idx)
-    {
-        for (pos, name) in [(n, "N"), (ca, "CA"), (c, "C")] {
-            let dist = pos.distance_squared(reference_point);
-            if closest.as_ref().is_none_or(|(_, _, d)| dist < *d) {
-                closest = Some((pos, name.to_owned(), dist));
-            }
-        }
-    }
-
-    // Check sidechain atoms for this residue
-    #[allow(
-        clippy::cast_precision_loss,
-        reason = "residue index fits in f32 for comparison"
-    )]
-    for (i, &res_idx) in sidechain_residue_indices.iter().enumerate() {
-        if res_idx as usize == residue_idx {
-            if let (Some(&pos), Some(name)) =
-                (sidechain_positions.get(i), sidechain_atom_names.get(i))
-            {
-                let dist = pos.distance_squared(reference_point);
-                if closest.as_ref().is_none_or(|(_, _, d)| dist < *d) {
-                    closest = Some((pos, name.clone(), dist));
-                }
-            }
-        }
-    }
-
-    closest.map(|(pos, name, _)| (pos, name))
-}
-
-/// Get atom position by index.
-#[must_use]
-pub fn get_atom_position(coords: &Coords, index: usize) -> Option<Vec3> {
-    coords.atoms.get(index).map(|a| Vec3::new(a.x, a.y, a.z))
-}
-
-/// Set atom position by index.
-pub fn set_atom_position(coords: &mut Coords, index: usize, pos: Vec3) {
-    if let Some(atom) = coords.atoms.get_mut(index) {
-        atom.x = pos.x;
-        atom.y = pos.y;
-        atom.z = pos.z;
-    }
-}
-
-/// Get position of a specific atom by residue number, chain ID, and atom name.
-#[must_use]
-pub fn get_atom_by_name(
-    coords: &Coords,
-    res_num: i32,
-    chain_id: u8,
-    atom_name: &str,
-) -> Option<Vec3> {
-    for i in 0..coords.num_atoms {
-        if coords.res_nums[i] == res_num && coords.chain_ids[i] == chain_id {
-            let name = std::str::from_utf8(&coords.atom_names[i])
-                .unwrap_or("")
-                .trim();
-            if name == atom_name {
-                return Some(Vec3::new(
-                    coords.atoms[i].x,
-                    coords.atoms[i].y,
-                    coords.atoms[i].z,
-                ));
-            }
-        }
-    }
-    None
-}
-
-/// Get CA position for a specific residue by residue number and chain ID.
-#[must_use]
-pub fn get_ca_for_residue(
-    coords: &Coords,
-    res_num: i32,
-    chain_id: u8,
-) -> Option<Vec3> {
-    get_atom_by_name(coords, res_num, chain_id, "CA")
-}
-
-/// Build a map of (chain_id, res_num) -> CA position for efficient lookup.
-#[must_use]
-pub fn build_ca_position_map(
-    coords: &Coords,
-) -> std::collections::HashMap<(u8, i32), Vec3> {
-    let mut map = std::collections::HashMap::new();
-    for i in 0..coords.num_atoms {
-        let name = std::str::from_utf8(&coords.atom_names[i])
-            .unwrap_or("")
-            .trim();
-        if name == "CA" {
-            let key = (coords.chain_ids[i], coords.res_nums[i]);
-            let _ = map.insert(
-                key,
-                Vec3::new(
-                    coords.atoms[i].x,
-                    coords.atoms[i].y,
-                    coords.atoms[i].z,
-                ),
-            );
-        }
-    }
-    map
 }
 
 /// Compute centroid of a point set.
@@ -361,4 +54,197 @@ pub fn centroid(points: &[Vec3]) -> Vec3 {
     }
     let sum: Vec3 = points.iter().copied().sum();
     sum / points.len() as f32
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::float_cmp)]
+mod tests {
+    use super::*;
+    use crate::element::Element;
+    use crate::ops::codec::{split_into_entities, Coords, CoordsAtom};
+
+    fn make_atom(x: f32, y: f32, z: f32) -> CoordsAtom {
+        CoordsAtom {
+            x,
+            y,
+            z,
+            occupancy: 1.0,
+            b_factor: 0.0,
+        }
+    }
+    fn res_name(s: &str) -> [u8; 3] {
+        let mut n = [b' '; 3];
+        for (i, b) in s.bytes().take(3).enumerate() {
+            n[i] = b;
+        }
+        n
+    }
+    fn atom_name(s: &str) -> [u8; 4] {
+        let mut n = [b' '; 4];
+        for (i, b) in s.bytes().take(4).enumerate() {
+            n[i] = b;
+        }
+        n
+    }
+
+    fn make_two_residue_protein_entities() -> Vec<MoleculeEntity> {
+        let coords = Coords {
+            num_atoms: 8,
+            atoms: vec![
+                make_atom(1.0, 2.0, 3.0), // N
+                make_atom(4.0, 5.0, 6.0), // CA
+                make_atom(5.3, 5.0, 6.0), /* C (close to next N for no
+                                           * break) */
+                make_atom(5.3, 6.0, 6.0),    // O
+                make_atom(6.5, 5.0, 6.0),    // N (1.2A from prev C)
+                make_atom(16.0, 17.0, 18.0), // CA
+                make_atom(19.0, 20.0, 21.0), // C
+                make_atom(22.0, 23.0, 24.0), // O
+            ],
+            chain_ids: vec![b'A'; 8],
+            res_names: vec![
+                res_name("ALA"),
+                res_name("ALA"),
+                res_name("ALA"),
+                res_name("ALA"),
+                res_name("GLY"),
+                res_name("GLY"),
+                res_name("GLY"),
+                res_name("GLY"),
+            ],
+            res_nums: vec![1, 1, 1, 1, 2, 2, 2, 2],
+            atom_names: vec![
+                atom_name("N"),
+                atom_name("CA"),
+                atom_name("C"),
+                atom_name("O"),
+                atom_name("N"),
+                atom_name("CA"),
+                atom_name("C"),
+                atom_name("O"),
+            ],
+            elements: vec![
+                Element::N,
+                Element::C,
+                Element::C,
+                Element::O,
+                Element::N,
+                Element::C,
+                Element::C,
+                Element::O,
+            ],
+        };
+        split_into_entities(&coords)
+    }
+
+    // -- extract_ca_positions --
+
+    #[test]
+    fn extract_ca_positions_from_protein() {
+        let entities = make_two_residue_protein_entities();
+        let ca_pos = extract_ca_positions(&entities);
+        assert_eq!(ca_pos.len(), 2);
+        assert!((ca_pos[0].x - 4.0).abs() < 1e-6);
+        assert!((ca_pos[1].x - 16.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn extract_ca_positions_empty_for_non_protein() {
+        let coords = Coords {
+            num_atoms: 1,
+            atoms: vec![make_atom(1.0, 2.0, 3.0)],
+            chain_ids: vec![b' '],
+            res_names: vec![res_name("HOH")],
+            res_nums: vec![100],
+            atom_names: vec![atom_name("O")],
+            elements: vec![Element::O],
+        };
+        let entities = split_into_entities(&coords);
+        let ca_pos = extract_ca_positions(&entities);
+        assert!(ca_pos.is_empty());
+    }
+
+    #[test]
+    fn extract_ca_positions_empty_for_empty_entities() {
+        let ca_pos = extract_ca_positions(&[]);
+        assert!(ca_pos.is_empty());
+    }
+
+    // -- extract_backbone_segments --
+
+    #[test]
+    fn extract_backbone_segments_from_protein() {
+        let entities = make_two_residue_protein_entities();
+        let segments = extract_backbone_segments(&entities);
+        assert!(!segments.is_empty());
+        // Each segment should have positions that are multiples of 3 (N,CA,C
+        // per residue)
+        for seg in &segments {
+            assert_eq!(seg.len() % 3, 0);
+        }
+    }
+
+    #[test]
+    fn extract_backbone_segments_empty_for_non_protein() {
+        let coords = Coords {
+            num_atoms: 1,
+            atoms: vec![make_atom(1.0, 2.0, 3.0)],
+            chain_ids: vec![b' '],
+            res_names: vec![res_name("HOH")],
+            res_nums: vec![100],
+            atom_names: vec![atom_name("O")],
+            elements: vec![Element::O],
+        };
+        let entities = split_into_entities(&coords);
+        let segments = extract_backbone_segments(&entities);
+        assert!(segments.is_empty());
+    }
+
+    // -- extract_ca_from_chains --
+
+    #[test]
+    fn extract_ca_from_chains_picks_every_third() {
+        let chains = vec![vec![
+            Vec3::new(0.0, 0.0, 0.0), // N
+            Vec3::new(1.0, 1.0, 1.0), // CA
+            Vec3::new(2.0, 2.0, 2.0), // C
+            Vec3::new(3.0, 3.0, 3.0), // N
+            Vec3::new(4.0, 4.0, 4.0), // CA
+            Vec3::new(5.0, 5.0, 5.0), // C
+        ]];
+        let cas = extract_ca_from_chains(&chains);
+        assert_eq!(cas.len(), 2);
+        assert!((cas[0].x - 1.0).abs() < 1e-6);
+        assert!((cas[1].x - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn extract_ca_from_chains_empty() {
+        let cas = extract_ca_from_chains(&[]);
+        assert!(cas.is_empty());
+    }
+
+    // -- centroid --
+
+    #[test]
+    fn centroid_single_point() {
+        let c = centroid(&[Vec3::new(3.0, 4.0, 5.0)]);
+        assert!((c.x - 3.0).abs() < 1e-6);
+        assert!((c.y - 4.0).abs() < 1e-6);
+        assert!((c.z - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn centroid_two_points() {
+        let c = centroid(&[Vec3::new(0.0, 0.0, 0.0), Vec3::new(4.0, 6.0, 8.0)]);
+        assert!((c.x - 2.0).abs() < 1e-6);
+        assert!((c.y - 3.0).abs() < 1e-6);
+        assert!((c.z - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn centroid_empty() {
+        let c = centroid(&[]);
+        assert_eq!(c, Vec3::ZERO);
+    }
 }

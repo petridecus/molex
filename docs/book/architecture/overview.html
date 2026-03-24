@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a3c85a9d.js";
+            window.path_to_searchindex_js = "../searchindex-056f3aa0.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-5b1e16ba.js"></script>
+        <script src="../toc-27f43c42.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,81 +178,75 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="architecture-overview"><a class="header" href="#architecture-overview">Architecture Overview</a></h1>
-<p>molex is organized as a layered conversion pipeline. Raw file bytes
-enter through adapters, pass through a canonical intermediate
-representation, and exit as either transformed coordinates, render-ready
-geometry, or binary-serialized bytes.</p>
-<h2 id="layer-diagram"><a class="header" href="#layer-diagram">Layer diagram</a></h2>
-<pre><code>                          ┌─────────────┐
-  PDB ──►┐               │   Coords    │               ┌──► Binary COORDS
-  CIF ──►├─► adapters ──►│ (canonical) ├──► ops ───────►├──► PDB string
- BCIF ──►├─►             │  + Entity   │   transform    ├──► RenderCoords
-  DCD ──►┘               │  classify   │   validate     └──► AtomArray (Py)
-                          └──────┬──────┘   align
-                                 │
-                                 ▼
-                          secondary_structure
-                          (DSSP → SSType[])
+<h2 id="module-layout"><a class="header" href="#module-layout">Module layout</a></h2>
+<pre><code>molex/src/
+├── adapters/         File format parsers (PDB, mmCIF, BinaryCIF, MRC, DCD, AtomWorks)
+├── analysis/         Structural analysis (bonds, secondary structure, AABB)
+├── element.rs        Element enum (symbols, covalent radii, colors)
+├── entity/           Entity system
+│   ├── molecule/     MoleculeEntity enum + subtypes (protein, nucleic acid, small molecule, bulk)
+│   └── surface/      Surface types (VoxelGrid, Density)
+├── ops/              Operations
+│   ├── codec/        Wire formats (COORDS01, ASSEM01), serialize/deserialize, split/merge
+│   └── transform/    Kabsch alignment, CA extraction, backbone segments
+├── ffi.rs            C FFI bindings
+├── python.rs         PyO3 bindings
+└── lib.rs            Crate root, re-exports
 </code></pre>
-<h2 id="core-types"><a class="header" href="#core-types">Core types</a></h2>
-<h3 id="coords"><a class="header" href="#coords"><code>Coords</code></a></h3>
-<p>The canonical atom-level representation. Flat parallel arrays:</p>
-<pre><code class="language-rust ignore">pub struct Coords {
-    pub num_atoms: usize,
-    pub atoms: Vec&lt;CoordsAtom&gt;,      // x, y, z, occupancy, b_factor
-    pub chain_ids: Vec&lt;u8&gt;,
-    pub res_names: Vec&lt;[u8; 3]&gt;,
-    pub res_nums: Vec&lt;i32&gt;,
-    pub atom_names: Vec&lt;[u8; 4]&gt;,
-    pub elements: Vec&lt;Element&gt;,
-}</code></pre>
-<p>Flat arrays make iteration, slicing, and binary serialization cheap.
-The tradeoff is no hierarchical chain→residue→atom tree — use
-<code>MoleculeEntity</code> when you need entity-level grouping.</p>
-<h3 id="moleculeentity"><a class="header" href="#moleculeentity"><code>MoleculeEntity</code></a></h3>
-<p>A classified molecule with its coordinates:</p>
-<pre><code class="language-rust ignore">pub struct MoleculeEntity {
-    pub entity_id: u32,
-    pub molecule_type: MoleculeType,  // Protein, DNA, RNA, Ligand, ...
-    pub kind: EntityKind,             // Polymer or AtomSet
-}</code></pre>
-<p><code>split_into_entities()</code> classifies residues by name and groups them
-into entities. This is the primary input to viso’s rendering engine.</p>
-<h3 id="rendercoords"><a class="header" href="#rendercoords"><code>RenderCoords</code></a></h3>
-<p>Extracted backbone chains (N-CA-C triples) and sidechain atoms with
-bond connectivity. Bridge between <code>Coords</code> and GPU renderers.</p>
-<h2 id="module-responsibilities"><a class="header" href="#module-responsibilities">Module responsibilities</a></h2>
+<h2 id="entity-first-design"><a class="header" href="#entity-first-design">Entity-first design</a></h2>
+<p>Entities (<code>Vec&lt;MoleculeEntity&gt;</code>) are the primary data model.</p>
+<p><strong>Adapters</strong> parse files into entities. The <code>*_to_entities</code> functions are the primary API. The <code>*_to_coords</code> functions parse to entities, then flatten to <code>Coords</code> via <code>merge_entities</code>.</p>
+<p><strong>Analysis</strong> operates on <code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>, or <code>&amp;[MoleculeEntity]</code>.</p>
+<p><strong><code>Coords</code></strong> is a flat, column-oriented wire format for FFI and IPC (parallel arrays of x/y/z, chain IDs, residue names, etc.).</p>
+<h2 id="entity-classification"><a class="header" href="#entity-classification">Entity classification</a></h2>
+<p>When a file is parsed, atoms are grouped into entities by chain ID, residue name, and molecule type. The <code>classify_residue</code> function maps 3-letter residue codes to <code>MoleculeType</code> values using lookup tables:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Module</th><th>Responsibility</th></tr>
+<tr><th>MoleculeType</th><th>Examples</th></tr>
 </thead>
 <tbody>
-<tr><td><code>types</code></td><td><code>Coords</code>, <code>MoleculeEntity</code>, <code>DensityMap</code>, binary serialization</td></tr>
-<tr><td><code>adapters</code></td><td>Format I/O: PDB, mmCIF, BinaryCIF, DCD, MRC, AtomWorks</td></tr>
-<tr><td><code>cif</code></td><td>Low-level CIF/STAR parser with typed extractors</td></tr>
-<tr><td><code>ops</code></td><td>Coordinate transforms, Kabsch alignment, bond inference, validation</td></tr>
-<tr><td><code>render</code></td><td>Backbone/sidechain extraction, sequence extraction</td></tr>
-<tr><td><code>secondary_structure</code></td><td>DSSP algorithm, SS type classification</td></tr>
-<tr><td><code>ffi</code></td><td><code>extern "C"</code> functions for C/C++ integration</td></tr>
-<tr><td><code>python</code></td><td>PyO3 bindings (feature-gated)</td></tr>
+<tr><td><code>Protein</code></td><td>Standard amino acids (ALA, GLY, …)</td></tr>
+<tr><td><code>DNA</code></td><td>DA, DT, DC, DG</td></tr>
+<tr><td><code>RNA</code></td><td>A, U, C, G</td></tr>
+<tr><td><code>Ligand</code></td><td>ATP, HEM, NAG, …</td></tr>
+<tr><td><code>Ion</code></td><td>ZN, MG, CA, FE, …</td></tr>
+<tr><td><code>Water</code></td><td>HOH, WAT, DOD</td></tr>
+<tr><td><code>Lipid</code></td><td>OLC, PLM, …</td></tr>
+<tr><td><code>Cofactor</code></td><td>HEM, NAD, FAD, …</td></tr>
+<tr><td><code>Solvent</code></td><td>GOL, EDO, PEG, …</td></tr>
 </tbody>
 </table>
 </div>
+<h2 id="type-hierarchy"><a class="header" href="#type-hierarchy">Type hierarchy</a></h2>
+<pre><code>MoleculeEntity (enum)
+├── Protein(ProteinEntity)      -- chain with residues, segment breaks
+├── NucleicAcid(NAEntity)       -- DNA/RNA chain with residues
+├── SmallMolecule(SmallMoleculeEntity) -- single ligand, ion, cofactor, lipid
+└── Bulk(BulkEntity)            -- grouped water or solvent molecules
+
+Entity trait   -- id(), molecule_type(), atoms(), positions(), atom_count()
+Polymer trait  -- residues(), segment_breaks(), segment_count(), segment_range()
+</code></pre>
+<p><code>ProteinEntity</code> and <code>NAEntity</code> implement both <code>Entity</code> and <code>Polymer</code>. <code>SmallMoleculeEntity</code> and <code>BulkEntity</code> implement <code>Entity</code> only.</p>
+<h2 id="surface-types"><a class="header" href="#surface-types">Surface types</a></h2>
+<p>The <code>entity::surface</code> module provides volumetric data types:</p>
+<ul>
+<li><strong><code>VoxelGrid</code></strong> – a generic 3D grid (<code>ndarray::Array3&lt;f32&gt;</code>) with crystallographic cell metadata. Handles fractional-to-Cartesian coordinate conversion.</li>
+<li><strong><code>Density</code></strong> – wraps <code>VoxelGrid</code> with density-specific metadata. Constructed by the MRC adapter.</li>
+</ul>
 <h2 id="binary-formats"><a class="header" href="#binary-formats">Binary formats</a></h2>
 <p>molex defines two compact binary formats for IPC:</p>
 <ul>
-<li><strong>COORDS01</strong> — single molecule: magic + atom data (26 bytes/atom)</li>
-<li><strong>ASSEM01</strong> — multi-entity assembly: magic + entity headers + atom data</li>
+<li><strong>COORDS01</strong> – flat atom array with element data (magic: <code>COORDS01</code>)</li>
+<li><strong>ASSEM01</strong> – entity-aware format preserving molecule type metadata per entity (magic: <code>ASSEM01\0</code>)</li>
 </ul>
-<p>Both use big-endian encoding and are designed for zero-overhead
-round-tripping between Rust and C++ backends.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../getting-started/installation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../getting-started/quick-start.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -266,7 +260,7 @@ round-tripping between Rust and C++ backends.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../getting-started/installation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../getting-started/quick-start.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
@@ -283,6 +277,22 @@ round-tripping between Rust and C++ backends.</p>
         <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
         <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
 
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
 
 
         <script>

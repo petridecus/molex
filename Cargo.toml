@@ -21,7 +21,6 @@ ndarray = "0.15"
 pdbtbx = "0.12"
 thiserror = "1.0"
 glam = "0.30"
-log = "0.4"
 rmp = "0.8"
 flate2 = "1"
 
@@ -29,8 +28,23 @@ flate2 = "1"
 default = []
 python = ["dep:pyo3", "dep:numpy"]
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
 [package.metadata.cargo-machete]
 ignored = ["numpy"]
+
+[[bench]]
+name = "parsing"
+harness = false
+
+[[bench]]
+name = "codec"
+harness = false
+
+[[bench]]
+name = "analysis"
+harness = false
 
 [lints.clippy]
 # Broad lint groups (lower priority so individual lints can override)

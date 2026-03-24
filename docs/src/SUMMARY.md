@@ -1,24 +1,22 @@
 # Summary
 
-[Introduction](./introduction.md)
+[Introduction](introduction.md)
 
 # Getting Started
 
-- [Quick Start](./getting-started/quick-start.md)
-- [Installation](./getting-started/installation.md)
+- [Installation](getting-started/installation.md)
+- [Quick Start](getting-started/quick-start.md)
 
 # Architecture
 
-- [Overview](./architecture/overview.md)
-- [Data Flow](./architecture/data-flow.md)
+- [Overview](architecture/overview.md)
+- [Data Flow](architecture/data-flow.md)
 
-# Module Guide
+# Modules
 
-- [Types — Core Data Structures](./modules/types.md)
-- [Adapters — Format I/O](./modules/adapters.md)
-- [CIF Parser](./modules/cif.md)
-- [Ops — Transforms and Analysis](./modules/ops.md)
-- [Render — Visualization Data](./modules/render.md)
-- [Secondary Structure](./modules/secondary-structure.md)
-- [FFI — C Bindings](./modules/ffi.md)
-- [Python Bindings](./modules/python.md)
+- [Entity System](modules/entity.md)
+- [Adapters](modules/adapters.md)
+- [Analysis](modules/analysis.md)
+- [Codec](modules/codec.md)
+- [C FFI](modules/ffi.md)
+- [Python Bindings](modules/python.md)

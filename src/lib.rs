@@ -14,12 +14,12 @@
 //! ```
 
 pub mod adapters;
-pub mod cif;
+/// Structural analysis: bond detection and secondary structure classification.
+pub mod analysis;
+pub mod element;
+pub mod entity;
 pub mod ffi;
 pub mod ops;
-pub mod render;
-pub mod secondary_structure;
-pub mod types;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -27,13 +27,16 @@ pub mod python;
 // ── Entity-first public API ─────────────────────────────────────────────
 // The most commonly used types, re-exported at the crate root.
 
+pub use analysis::{HBond, SSType};
+pub use element::Element;
+pub use entity::molecule::atom::Atom;
+pub use entity::molecule::protein::{
+    ProteinResidue, ResidueBackbone, Sidechain,
+};
+pub use entity::molecule::{MoleculeEntity, MoleculeType, NucleotideRing};
+pub use ops::codec::{Coords, CoordsAtom, CoordsError};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-pub use secondary_structure::SSType;
-pub use types::coords::{Coords, CoordsAtom, CoordsError, Element};
-pub use types::entity::{
-    EntityKind, MoleculeEntity, MoleculeType, NucleotideRing,
-};
 
 #[cfg(feature = "python")]
 #[pymodule(name = "molex")]

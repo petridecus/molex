@@ -1,61 +1,63 @@
-# FFI — C Bindings
+# C FFI
 
-The `ffi` module provides `extern "C"` functions for integration with
-C and C++ applications. These are re-exported by `foldit-runner` for
-inclusion in its generated C header.
+C-compatible bindings live in `molex::ffi` (source: `src/ffi.rs`). These expose COORDS conversion functions for consumption from C, C++, Swift, or any language with C FFI support.
 
-## Functions
-
-### `coords_from_backbone`
-
-```c
-CoordsResult coords_from_backbone(
-    const float* positions,  // [x,y,z] × n_atoms
-    uint32_t n_atoms,
-    const uint8_t* chain_ids,
-    const int32_t* res_nums,
-    const char (*res_names)[4],  // 3-letter codes, null-padded
-    const char (*atom_names)[5]  // 4-letter codes, null-padded
-);
-```
-
-Constructs COORDS01 bytes from raw arrays. Returns a `CoordsResult`
-containing either serialized bytes or an error string.
-
-### `coords_free_result`
-
-Free memory allocated by `coords_from_backbone`.
-
-### `coords_free_string`
-
-Free an error string from a `CoordsResult`.
-
-## `CoordsResult`
+## Result type
 
 ```c
 typedef struct {
-    const uint8_t* data;   // COORDS01 bytes (null on error)
-    uint32_t len;          // byte length
-    const char* error;     // error message (null on success)
+    const uint8_t *data;    // output bytes, or NULL on error
+    size_t len;             // data length
+    size_t data_len;        // allocated capacity
+    const char *error;      // error string, or NULL on success
 } CoordsResult;
 ```
 
-## Usage from C++
+## Functions
 
-```cpp
-#include "molex.h"
+### `pdb_to_coords_bytes`
 
-auto result = coords_from_backbone(
-    positions.data(), n_atoms,
-    chain_ids.data(), res_nums.data(),
-    res_names.data(), atom_names.data()
-);
+Parse a PDB string into COORDS binary format.
 
-if (result.error) {
-    fprintf(stderr, "Error: %s\n", result.error);
-    coords_free_string(result.error);
-} else {
-    // Use result.data[0..result.len]
-    coords_free_result(result);
-}
+```c
+CoordsResult pdb_to_coords_bytes(const char *pdb_ptr, size_t pdb_len);
 ```
+
+### `coords_to_pdb`
+
+Convert COORDS binary to a PDB-format string. Returns a null-terminated C string. The caller must free the string with `coords_free_string`.
+
+```c
+const char *coords_to_pdb(const uint8_t *coords_ptr, size_t coords_len, size_t *out_len);
+```
+
+### `coords_from_coords`
+
+Deserialize and re-serialize COORDS bytes (round-trip validation).
+
+```c
+CoordsResult coords_from_coords(const uint8_t *coords_ptr, size_t coords_len);
+```
+
+### `coords_from_backbone`
+
+Build COORDS from backbone positions. Currently returns an error (not yet implemented).
+
+```c
+CoordsResult coords_from_backbone(
+    const float *positions,
+    size_t num_res,
+    const char *sequence,
+    const int32_t *chain_breaks,
+    size_t chain_break_count
+);
+```
+
+## Memory management
+
+```c
+void coords_free_result(const CoordsResult *result);
+void coords_free_string(const char *s);
+```
+
+All pointers returned by FFI functions must be freed using the corresponding free function. Do not use `free()` directly.

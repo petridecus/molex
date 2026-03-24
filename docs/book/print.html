@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a3c85a9d.js";
+            window.path_to_searchindex_js = "searchindex-056f3aa0.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-5b1e16ba.js"></script>
+        <script src="toc-27f43c42.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -179,104 +179,126 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="molex"><a class="header" href="#molex">molex</a></h1>
-<p><strong>molex</strong> is a Rust library for parsing, transforming, and serializing
-molecular structure data. It provides a unified type system for working
-with proteins, nucleic acids, ligands, and other biomolecules across
-multiple file formats.</p>
-<h2 id="what-it-does"><a class="header" href="#what-it-does">What it does</a></h2>
+<p><strong>molex</strong> (molecular exchange) is a Rust library for parsing, analyzing, transforming, and serializing molecular structure data. It supports PDB, mmCIF, BinaryCIF, MRC/CCP4 density maps, and DCD trajectories.</p>
+<h2 id="key-concepts"><a class="header" href="#key-concepts">Key concepts</a></h2>
 <ul>
-<li><strong>Parse</strong> PDB, mmCIF, BinaryCIF, DCD trajectory, and MRC density files</li>
-<li><strong>Convert</strong> between formats with a canonical intermediate representation</li>
-<li><strong>Transform</strong> coordinates: alignment, superposition, filtering, interpolation</li>
-<li><strong>Analyze</strong> secondary structure (DSSP), bond inference, validation</li>
-<li><strong>Extract</strong> render-ready data (backbone chains, sidechain atoms, bonds)</li>
-<li><strong>Serialize</strong> to a compact binary format for IPC and storage</li>
+<li>
+<p><strong><code>MoleculeEntity</code></strong> represents a single molecule: a protein chain, a DNA/RNA strand, a ligand, an ion, or a group of waters. Parsing a structure file produces a <code>Vec&lt;MoleculeEntity&gt;</code>.</p>
+</li>
+<li>
+<p><strong><code>Atom</code></strong> holds a position, element, atom name, occupancy, and B-factor. Residue and chain context live on the entity that contains the atom.</p>
+</li>
+<li>
+<p><strong><code>Coords</code></strong> is a binary serialization format used for FFI and IPC (e.g. iceoryx zero-copy between processes).</p>
+</li>
+<li>
+<p><strong>Analysis</strong> includes covalent bond inference, DSSP hydrogen bond detection, disulfide bridges, and secondary structure classification.</p>
+</li>
+<li>
+<p><strong><code>VoxelGrid</code></strong> and <strong><code>Density</code></strong> represent 3D volumetric data (electron density, cryo-EM maps).</p>
+</li>
 </ul>
-<h2 id="key-types"><a class="header" href="#key-types">Key types</a></h2>
+<h2 id="crate-features"><a class="header" href="#crate-features">Crate features</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Type</th><th>Description</th></tr>
+<tr><th>Feature</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Coords</code></td><td>Flat atom arrays: positions, names, chains, residues, elements</td></tr>
-<tr><td><code>MoleculeEntity</code></td><td>A classified molecule (protein, ligand, etc.) with its <code>Coords</code></td></tr>
-<tr><td><code>RenderCoords</code></td><td>Backbone chains + sidechain atoms, ready for GPU consumption</td></tr>
-<tr><td><code>SSType</code></td><td>Secondary structure classification (helix, sheet, coil, turn)</td></tr>
-<tr><td><code>DensityMap</code></td><td>3D electron density grid from MRC/CCP4 files</td></tr>
+<tr><td><code>default</code></td><td>Core Rust library (no Python)</td></tr>
+<tr><td><code>python</code></td><td>PyO3 bindings + AtomWorks interop</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="design-principles"><a class="header" href="#design-principles">Design principles</a></h2>
-<ol>
-<li><strong>Zero-copy where possible.</strong> Parsing produces owned data, but
-transforms operate on slices and iterators.</li>
-<li><strong>Format-agnostic core.</strong> <code>Coords</code> and <code>MoleculeEntity</code> carry no
-format-specific metadata — adapters handle the translation.</li>
-<li><strong>Embeddable.</strong> No filesystem, network, or GPU dependencies in the
-core. Optional <code>python</code> feature adds PyO3 bindings.</li>
-</ol>
-<h2 id="crate-structure"><a class="header" href="#crate-structure">Crate structure</a></h2>
-<pre><code>molex/
-├── types/              Core data structures (Coords, Entity, Density)
-├── adapters/           Format I/O (PDB, mmCIF, BinaryCIF, DCD, MRC, AtomWorks)
-├── cif/                CIF/STAR parser and typed extractors
-├── ops/                Coordinate transforms, validation, bond inference
-├── render/             Render-ready data extraction
-├── secondary_structure/ DSSP and SS type classification
-├── ffi/                C-compatible FFI layer
-└── python/             PyO3 bindings (feature-gated)
-</code></pre>
 <h2 id="api-documentation"><a class="header" href="#api-documentation">API documentation</a></h2>
 <p>For the full Rust API reference, run:</p>
 <pre><code class="language-bash">cargo doc --open --document-private-items
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="installation"><a class="header" href="#installation">Installation</a></h1>
+<h2 id="as-a-rust-dependency"><a class="header" href="#as-a-rust-dependency">As a Rust dependency</a></h2>
+<p>Add to your <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[dependencies]
+molex = "0.1"
+</code></pre>
+<p>To enable Python bindings (PyO3 + NumPy + AtomWorks interop):</p>
+<pre><code class="language-toml">[dependencies]
+molex = { version = "0.1", features = ["python"] }
+</code></pre>
+<h2 id="as-a-python-package"><a class="header" href="#as-a-python-package">As a Python package</a></h2>
+<pre><code class="language-bash">cd crates/molex
+maturin develop --release --features python
+
+python -c "import molex; print('OK')"
+</code></pre>
+<h2 id="dependencies"><a class="header" href="#dependencies">Dependencies</a></h2>
+<p>molex pulls in:</p>
+<ul>
+<li><strong>glam</strong> – 3D math (<code>Vec3</code>, <code>Mat4</code>)</li>
+<li><strong>pdbtbx</strong> – PDB format parsing</li>
+<li><strong>ndarray</strong> – 3D arrays for density grids</li>
+<li><strong>rmp</strong> – MessagePack for BinaryCIF decoding</li>
+<li><strong>flate2</strong> – gzip decompression</li>
+<li><strong>thiserror</strong> – error types</li>
+</ul>
+<p>With the <code>python</code> feature:</p>
+<ul>
+<li><strong>pyo3</strong> – Python FFI</li>
+<li><strong>numpy</strong> – NumPy array interop</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="quick-start"><a class="header" href="#quick-start">Quick Start</a></h1>
-<h2 id="parse-a-pdb-file"><a class="header" href="#parse-a-pdb-file">Parse a PDB file</a></h2>
-<pre><code class="language-rust ignore">use molex::adapters::pdb::structure_file_to_coords;
-use molex::types::entity::split_into_entities;
+<h2 id="parse-a-pdb-file-into-entities"><a class="header" href="#parse-a-pdb-file-into-entities">Parse a PDB file into entities</a></h2>
+<pre><code class="language-rust ignore">use molex::adapters::pdb::pdb_file_to_entities;
+use std::path::Path;
 
-// Parse any PDB or mmCIF file
-let coords = structure_file_to_coords("1ubq.pdb")?;
+let entities = pdb_file_to_entities(Path::new("1ubq.pdb"))?;
+for e in &amp;entities {
+    println!("{}: {} atoms", e.label(), e.atom_count());
+}
+// Output:
+//   Protein A: 660 atoms
+//   Water (58 molecules): 58 atoms</code></pre>
+<h2 id="auto-detect-format-by-extension"><a class="header" href="#auto-detect-format-by-extension">Auto-detect format by extension</a></h2>
+<p><code>structure_file_to_entities</code> dispatches on <code>.pdb</code>/<code>.ent</code> vs mmCIF:</p>
+<pre><code class="language-rust ignore">use molex::adapters::pdb::structure_file_to_entities;
+use std::path::Path;
 
-// Split into classified entities (protein, ligand, water, etc.)
-let entities = split_into_entities(&amp;coords);
-for entity in &amp;entities {
+let entities = structure_file_to_entities(Path::new("3nez.cif"))?;</code></pre>
+<h2 id="work-with-entities"><a class="header" href="#work-with-entities">Work with entities</a></h2>
+<pre><code class="language-rust ignore">use molex::{MoleculeEntity, MoleculeType};
+
+// Filter to protein chains
+let proteins: Vec&lt;_&gt; = entities.iter()
+    .filter(|e| e.molecule_type() == MoleculeType::Protein)
+    .collect();
+
+// Access protein-specific data
+for entity in &amp;proteins {
+    let protein = entity.as_protein().unwrap();
+    let backbone = protein.to_backbone();
     println!(
-        "Entity {}: {:?} ({} atoms)",
-        entity.entity_id,
-        entity.molecule_type,
-        entity.atom_count(),
+        "Chain {}: {} residues, {} segments",
+        protein.pdb_chain_id as char,
+        protein.residues.len(),
+        protein.segment_count(),
     );
 }</code></pre>
-<h2 id="extract-backbone-chains"><a class="header" href="#extract-backbone-chains">Extract backbone chains</a></h2>
-<pre><code class="language-rust ignore">use molex::ops::transform::{protein_only, extract_backbone_chains};
+<h2 id="run-dssp-secondary-structure-assignment"><a class="header" href="#run-dssp-secondary-structure-assignment">Run DSSP secondary structure assignment</a></h2>
+<pre><code class="language-rust ignore">use molex::analysis::{detect_dssp, SSType};
 
-let protein_coords = protein_only(&amp;coords);
-let chains = extract_backbone_chains(&amp;protein_coords);
-for (i, chain) in chains.iter().enumerate() {
-    println!("Chain {}: {} CA positions", i, chain.len());
-}</code></pre>
-<h2 id="compute-secondary-structure"><a class="header" href="#compute-secondary-structure">Compute secondary structure</a></h2>
-<pre><code class="language-rust ignore">use molex::secondary_structure::dssp::from_entity;
-
-let ss_types = from_entity(&amp;entities[0]);
+let protein = entities[0].as_protein().unwrap();
+let backbone = protein.to_backbone();
+let (ss_types, hbonds) = detect_dssp(&amp;backbone);
 for (i, ss) in ss_types.iter().enumerate() {
-    println!("Residue {}: {:?}", i, ss);
+    println!("Residue {}: {:?}", i, ss); // Helix, Sheet, or Coil
 }</code></pre>
-<h2 id="convert-between-formats"><a class="header" href="#convert-between-formats">Convert between formats</a></h2>
-<pre><code class="language-rust ignore">use molex::adapters::pdb::{pdb_to_coords, coords_to_pdb};
-use molex::types::coords::{serialize, deserialize};
+<h2 id="serialize-to-coords-binary-for-ffiipc"><a class="header" href="#serialize-to-coords-binary-for-ffiipc">Serialize to COORDS binary (for FFI/IPC)</a></h2>
+<pre><code class="language-rust ignore">use molex::ops::codec::{serialize, merge_entities};
 
-// PDB string → binary COORDS
-let coords_bytes = pdb_to_coords(pdb_string)?;
-
-// Binary COORDS → Coords struct
-let coords = deserialize(&amp;coords_bytes)?;
-
-// Coords struct → PDB string
-let pdb_out = coords_to_pdb(&amp;coords_bytes)?;</code></pre>
+let coords = merge_entities(&amp;entities);
+let bytes = serialize(&amp;coords)?;
+// Send `bytes` over FFI, IPC, or network</code></pre>
 <h2 id="python-usage"><a class="header" href="#python-usage">Python usage</a></h2>
 <pre><code class="language-python">import molex
 
@@ -289,539 +311,505 @@ atom_array = molex.entities_to_atom_array(assembly_bytes)
 assembly_bytes = molex.atom_array_to_entities(atom_array)
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="installation"><a class="header" href="#installation">Installation</a></h1>
-<h2 id="as-a-rust-dependency"><a class="header" href="#as-a-rust-dependency">As a Rust dependency</a></h2>
-<p>Add to your <code>Cargo.toml</code>:</p>
-<pre><code class="language-toml">[dependencies]
-molex = { git = "https://github.com/petridecus/molex" }
-</code></pre>
-<h2 id="as-a-python-package"><a class="header" href="#as-a-python-package">As a Python package</a></h2>
-<p>molex provides optional Python bindings via PyO3/maturin.</p>
-<pre><code class="language-bash"># Build and install the wheel
-cd crates/molex
-maturin develop --release --features python
-
-# Verify
-python -c "import molex; print('OK')"
-</code></pre>
-<h2 id="feature-flags"><a class="header" href="#feature-flags">Feature flags</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Feature</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>python</code></td><td>Enable PyO3 bindings (requires <code>pyo3</code>, <code>numpy</code>)</td></tr>
-</tbody>
-</table>
-</div>
-<p>The default build includes no optional features — it’s a pure Rust
-library with no native dependencies beyond <code>glam</code> and <code>pdbtbx</code>.</p>
-<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="architecture-overview"><a class="header" href="#architecture-overview">Architecture Overview</a></h1>
-<p>molex is organized as a layered conversion pipeline. Raw file bytes
-enter through adapters, pass through a canonical intermediate
-representation, and exit as either transformed coordinates, render-ready
-geometry, or binary-serialized bytes.</p>
-<h2 id="layer-diagram"><a class="header" href="#layer-diagram">Layer diagram</a></h2>
-<pre><code>                          ┌─────────────┐
-  PDB ──►┐               │   Coords    │               ┌──► Binary COORDS
-  CIF ──►├─► adapters ──►│ (canonical) ├──► ops ───────►├──► PDB string
- BCIF ──►├─►             │  + Entity   │   transform    ├──► RenderCoords
-  DCD ──►┘               │  classify   │   validate     └──► AtomArray (Py)
-                          └──────┬──────┘   align
-                                 │
-                                 ▼
-                          secondary_structure
-                          (DSSP → SSType[])
+<h2 id="module-layout"><a class="header" href="#module-layout">Module layout</a></h2>
+<pre><code>molex/src/
+├── adapters/         File format parsers (PDB, mmCIF, BinaryCIF, MRC, DCD, AtomWorks)
+├── analysis/         Structural analysis (bonds, secondary structure, AABB)
+├── element.rs        Element enum (symbols, covalent radii, colors)
+├── entity/           Entity system
+│   ├── molecule/     MoleculeEntity enum + subtypes (protein, nucleic acid, small molecule, bulk)
+│   └── surface/      Surface types (VoxelGrid, Density)
+├── ops/              Operations
+│   ├── codec/        Wire formats (COORDS01, ASSEM01), serialize/deserialize, split/merge
+│   └── transform/    Kabsch alignment, CA extraction, backbone segments
+├── ffi.rs            C FFI bindings
+├── python.rs         PyO3 bindings
+└── lib.rs            Crate root, re-exports
 </code></pre>
-<h2 id="core-types"><a class="header" href="#core-types">Core types</a></h2>
-<h3 id="coords"><a class="header" href="#coords"><code>Coords</code></a></h3>
-<p>The canonical atom-level representation. Flat parallel arrays:</p>
-<pre><code class="language-rust ignore">pub struct Coords {
-    pub num_atoms: usize,
-    pub atoms: Vec&lt;CoordsAtom&gt;,      // x, y, z, occupancy, b_factor
-    pub chain_ids: Vec&lt;u8&gt;,
-    pub res_names: Vec&lt;[u8; 3]&gt;,
-    pub res_nums: Vec&lt;i32&gt;,
-    pub atom_names: Vec&lt;[u8; 4]&gt;,
-    pub elements: Vec&lt;Element&gt;,
-}</code></pre>
-<p>Flat arrays make iteration, slicing, and binary serialization cheap.
-The tradeoff is no hierarchical chain→residue→atom tree — use
-<code>MoleculeEntity</code> when you need entity-level grouping.</p>
-<h3 id="moleculeentity"><a class="header" href="#moleculeentity"><code>MoleculeEntity</code></a></h3>
-<p>A classified molecule with its coordinates:</p>
-<pre><code class="language-rust ignore">pub struct MoleculeEntity {
-    pub entity_id: u32,
-    pub molecule_type: MoleculeType,  // Protein, DNA, RNA, Ligand, ...
-    pub kind: EntityKind,             // Polymer or AtomSet
-}</code></pre>
-<p><code>split_into_entities()</code> classifies residues by name and groups them
-into entities. This is the primary input to viso’s rendering engine.</p>
-<h3 id="rendercoords"><a class="header" href="#rendercoords"><code>RenderCoords</code></a></h3>
-<p>Extracted backbone chains (N-CA-C triples) and sidechain atoms with
-bond connectivity. Bridge between <code>Coords</code> and GPU renderers.</p>
-<h2 id="module-responsibilities"><a class="header" href="#module-responsibilities">Module responsibilities</a></h2>
+<h2 id="entity-first-design"><a class="header" href="#entity-first-design">Entity-first design</a></h2>
+<p>Entities (<code>Vec&lt;MoleculeEntity&gt;</code>) are the primary data model.</p>
+<p><strong>Adapters</strong> parse files into entities. The <code>*_to_entities</code> functions are the primary API. The <code>*_to_coords</code> functions parse to entities, then flatten to <code>Coords</code> via <code>merge_entities</code>.</p>
+<p><strong>Analysis</strong> operates on <code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>, or <code>&amp;[MoleculeEntity]</code>.</p>
+<p><strong><code>Coords</code></strong> is a flat, column-oriented wire format for FFI and IPC (parallel arrays of x/y/z, chain IDs, residue names, etc.).</p>
+<h2 id="entity-classification"><a class="header" href="#entity-classification">Entity classification</a></h2>
+<p>When a file is parsed, atoms are grouped into entities by chain ID, residue name, and molecule type. The <code>classify_residue</code> function maps 3-letter residue codes to <code>MoleculeType</code> values using lookup tables:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Module</th><th>Responsibility</th></tr>
+<tr><th>MoleculeType</th><th>Examples</th></tr>
 </thead>
 <tbody>
-<tr><td><code>types</code></td><td><code>Coords</code>, <code>MoleculeEntity</code>, <code>DensityMap</code>, binary serialization</td></tr>
-<tr><td><code>adapters</code></td><td>Format I/O: PDB, mmCIF, BinaryCIF, DCD, MRC, AtomWorks</td></tr>
-<tr><td><code>cif</code></td><td>Low-level CIF/STAR parser with typed extractors</td></tr>
-<tr><td><code>ops</code></td><td>Coordinate transforms, Kabsch alignment, bond inference, validation</td></tr>
-<tr><td><code>render</code></td><td>Backbone/sidechain extraction, sequence extraction</td></tr>
-<tr><td><code>secondary_structure</code></td><td>DSSP algorithm, SS type classification</td></tr>
-<tr><td><code>ffi</code></td><td><code>extern "C"</code> functions for C/C++ integration</td></tr>
-<tr><td><code>python</code></td><td>PyO3 bindings (feature-gated)</td></tr>
+<tr><td><code>Protein</code></td><td>Standard amino acids (ALA, GLY, …)</td></tr>
+<tr><td><code>DNA</code></td><td>DA, DT, DC, DG</td></tr>
+<tr><td><code>RNA</code></td><td>A, U, C, G</td></tr>
+<tr><td><code>Ligand</code></td><td>ATP, HEM, NAG, …</td></tr>
+<tr><td><code>Ion</code></td><td>ZN, MG, CA, FE, …</td></tr>
+<tr><td><code>Water</code></td><td>HOH, WAT, DOD</td></tr>
+<tr><td><code>Lipid</code></td><td>OLC, PLM, …</td></tr>
+<tr><td><code>Cofactor</code></td><td>HEM, NAD, FAD, …</td></tr>
+<tr><td><code>Solvent</code></td><td>GOL, EDO, PEG, …</td></tr>
 </tbody>
 </table>
 </div>
+<h2 id="type-hierarchy"><a class="header" href="#type-hierarchy">Type hierarchy</a></h2>
+<pre><code>MoleculeEntity (enum)
+├── Protein(ProteinEntity)      -- chain with residues, segment breaks
+├── NucleicAcid(NAEntity)       -- DNA/RNA chain with residues
+├── SmallMolecule(SmallMoleculeEntity) -- single ligand, ion, cofactor, lipid
+└── Bulk(BulkEntity)            -- grouped water or solvent molecules
+
+Entity trait   -- id(), molecule_type(), atoms(), positions(), atom_count()
+Polymer trait  -- residues(), segment_breaks(), segment_count(), segment_range()
+</code></pre>
+<p><code>ProteinEntity</code> and <code>NAEntity</code> implement both <code>Entity</code> and <code>Polymer</code>. <code>SmallMoleculeEntity</code> and <code>BulkEntity</code> implement <code>Entity</code> only.</p>
+<h2 id="surface-types"><a class="header" href="#surface-types">Surface types</a></h2>
+<p>The <code>entity::surface</code> module provides volumetric data types:</p>
+<ul>
+<li><strong><code>VoxelGrid</code></strong> – a generic 3D grid (<code>ndarray::Array3&lt;f32&gt;</code>) with crystallographic cell metadata. Handles fractional-to-Cartesian coordinate conversion.</li>
+<li><strong><code>Density</code></strong> – wraps <code>VoxelGrid</code> with density-specific metadata. Constructed by the MRC adapter.</li>
+</ul>
 <h2 id="binary-formats"><a class="header" href="#binary-formats">Binary formats</a></h2>
 <p>molex defines two compact binary formats for IPC:</p>
 <ul>
-<li><strong>COORDS01</strong> — single molecule: magic + atom data (26 bytes/atom)</li>
-<li><strong>ASSEM01</strong> — multi-entity assembly: magic + entity headers + atom data</li>
+<li><strong>COORDS01</strong> – flat atom array with element data (magic: <code>COORDS01</code>)</li>
+<li><strong>ASSEM01</strong> – entity-aware format preserving molecule type metadata per entity (magic: <code>ASSEM01\0</code>)</li>
 </ul>
-<p>Both use big-endian encoding and are designed for zero-overhead
-round-tripping between Rust and C++ backends.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="data-flow"><a class="header" href="#data-flow">Data Flow</a></h1>
-<p>This page traces the typical lifecycle of molecular data through
-molex, from file input to render-ready output.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<pre><code>                       ┌──────────────┐
+ PDB / mmCIF / BCIF ──&gt;│              ├──&gt; Vec&lt;MoleculeEntity&gt;
+ MRC / CCP4         ──&gt;│   Adapters   ├──&gt; Density (SurfaceEntity)
+ DCD                ──&gt;│              ├──&gt; Vec&lt;DcdFrame&gt;
+                       └──────┬───────┘
+                              │
+                              v
+                  ┌───────────────────────┐
+                  │       Entities        │
+                  │                       │
+                  │  MoleculeEntity       │
+                  │  SurfaceEntity        │
+                  └──┬────────┬────────┬──┘
+                     │        │        │
+                     v        v        v
+              ┌──────────┐ ┌────────┐ ┌─────────┐
+              │ Analysis │ │  Ops   │ │  Codec  │
+              │          │ │        │ │         │
+              │ dssp     │ │ kabsch │ │serialize│
+              │ bonds    │ │ align  │ │serialize│
+              │ disulfide│ │extract │ │_assembly│
+              │ aabb     │ │        │ │         │
+              └──────────┘ └────────┘ └────┬────┘
+                                           │
+                                           v
+                                  FFI / IPC / Python
+</code></pre>
+<p>Analysis, Transform, and Codec are independent — use any combination depending on what you need.</p>
 <h2 id="1-parsing"><a class="header" href="#1-parsing">1. Parsing</a></h2>
-<p>Every supported format has a dedicated adapter that produces <code>Coords</code>:</p>
-<pre><code>PDB file  → adapters::pdb::pdb_to_coords()       → Vec&lt;u8&gt; (COORDS01)
-CIF file  → adapters::pdb::mmcif_to_coords()      → Vec&lt;u8&gt; (COORDS01)
-BCIF file → adapters::bcif::bcif_to_coords()       → Vec&lt;u8&gt; (COORDS01)
-DCD file  → adapters::dcd::dcd_file_to_frames()    → Vec&lt;DcdFrame&gt;
-MRC file  → adapters::mrc::mrc_to_density()        → DensityMap
-</code></pre>
-<p>The binary <code>Vec&lt;u8&gt;</code> is the COORDS01 format. Deserialize it to get
-the <code>Coords</code> struct:</p>
-<pre><code class="language-rust ignore">let coords = molex::types::coords::deserialize(&amp;bytes)?;</code></pre>
-<h2 id="2-entity-classification"><a class="header" href="#2-entity-classification">2. Entity classification</a></h2>
-<pre><code class="language-rust ignore">let entities = molex::types::entity::split_into_entities(&amp;coords);
-// entities: Vec&lt;MoleculeEntity&gt;
-// Each entity has: entity_id, molecule_type, kind (Polymer or AtomSet)</code></pre>
-<p>Classification is based on residue name lookup — standard amino acids
-become <code>Protein</code>, nucleotides become <code>DNA</code>/<code>RNA</code>, <code>HOH</code> becomes
-<code>Water</code>, and everything else is classified as <code>Ligand</code>, <code>Ion</code>,
-<code>Cofactor</code>, etc.</p>
-<h2 id="3-transforms"><a class="header" href="#3-transforms">3. Transforms</a></h2>
-<p>The <code>ops::transform</code> module provides coordinate manipulation:</p>
-<pre><code class="language-rust ignore">// Filter to protein-only atoms
-let protein = ops::transform::protein_only(&amp;coords);
+<p>Every structure adapter returns <code>Vec&lt;MoleculeEntity&gt;</code>:</p>
+<pre><code class="language-rust ignore">let entities = pdb_file_to_entities(Path::new("1ubq.pdb"))?;
+let entities = mmcif_file_to_entities(Path::new("3nez.cif"))?;
+let entities = bcif_file_to_entities(Path::new("1ubq.bcif"))?;</code></pre>
+<p>Density and trajectory adapters return their own types:</p>
+<pre><code class="language-rust ignore">let density = mrc_file_to_density(Path::new("emd_1234.map"))?;
+let frames = dcd_file_to_frames(Path::new("trajectory.dcd"))?;</code></pre>
+<h2 id="2-entity-splitting"><a class="header" href="#2-entity-splitting">2. Entity splitting</a></h2>
+<p><code>split_into_entities</code> groups atoms by:</p>
+<ol>
+<li>Chain ID + molecule type for polymers (one entity per chain)</li>
+<li>Chain ID + residue number for small molecules (one entity each)</li>
+<li>All waters into a single <code>Bulk</code> entity</li>
+<li>All solvents into a single <code>Bulk</code> entity</li>
+</ol>
+<p>Each entity gets a unique <code>EntityId</code>.</p>
+<h2 id="3-analysis"><a class="header" href="#3-analysis">3. Analysis</a></h2>
+<pre><code class="language-rust ignore">let (ss_types, hbonds) = detect_dssp(&amp;backbone_residues);
+let bonds = infer_bonds(&amp;atoms, DEFAULT_TOLERANCE);
+let disulfides = detect_disulfide_bonds(&amp;atoms);
+let aabb = entity.aabb();</code></pre>
+<h2 id="4-transforms"><a class="header" href="#4-transforms">4. Transforms</a></h2>
+<pre><code class="language-rust ignore">let (rotation, translation) = kabsch_alignment(&amp;reference_ca, &amp;target_ca);
+transform_entities(&amp;mut entities, rotation, translation);
+let ca_positions = extract_ca_positions(&amp;entities);</code></pre>
+<h2 id="5-serialization"><a class="header" href="#5-serialization">5. Serialization</a></h2>
+<p>For sending to C/C++/Python consumers:</p>
+<pre><code class="language-rust ignore">// COORDS01 (flat atom array)
+let bytes = serialize(&amp;merge_entities(&amp;entities))?;
 
-// Kabsch superposition onto a reference
-let (aligned, rmsd) = ops::transform::kabsch_alignment(&amp;mobile, &amp;target);
-
-// Extract backbone chains as Vec&lt;Vec3&gt; (N-CA-C triples)
-let chains = ops::transform::extract_backbone_chains(&amp;coords);</code></pre>
-<h2 id="4-secondary-structure"><a class="header" href="#4-secondary-structure">4. Secondary structure</a></h2>
-<p>DSSP classification from backbone geometry:</p>
-<pre><code class="language-rust ignore">let ss_types: Vec&lt;SSType&gt; = secondary_structure::dssp::from_entity(&amp;entity);
-// SSType::Helix, SSType::Sheet, SSType::Coil, SSType::Turn</code></pre>
-<h2 id="5-render-extraction"><a class="header" href="#5-render-extraction">5. Render extraction</a></h2>
-<p><code>RenderCoords</code> splits atoms into backbone and sidechain data suitable
-for GPU rendering:</p>
-<pre><code class="language-rust ignore">let render = RenderCoords::from_entity(&amp;entity, is_hydrophobic, get_bonds);
-// render.backbone_chains: Vec&lt;Vec&lt;Vec3&gt;&gt;  (N-CA-C per chain)
-// render.sidechain_atoms: Vec&lt;RenderSidechainAtom&gt;
-// render.sidechain_bonds: Vec&lt;(u32, u32)&gt;</code></pre>
-<h2 id="6-serialization"><a class="header" href="#6-serialization">6. Serialization</a></h2>
-<p>For IPC with C++ backends or storage:</p>
-<pre><code class="language-rust ignore">// Single molecule
-let bytes = molex::types::coords::serialize(&amp;coords)?;
-
-// Multi-entity assembly
-let bytes = molex::types::coords::serialize_assembly(&amp;entities)?;</code></pre>
-<h2 id="pipeline-summary"><a class="header" href="#pipeline-summary">Pipeline summary</a></h2>
-<pre><code>File → Adapter → Coords → split_into_entities → MoleculeEntity[]
-                    │                                   │
-                    ├──► ops::transform (align, filter)  │
-                    ├──► ops::validation (completeness)  │
-                    └──► serialize (binary IPC)          │
-                                                        ▼
-                                            secondary_structure::dssp
-                                                        │
-                                                        ▼
-                                              RenderCoords::from_entity
-                                              (backbone + sidechain data)
-</code></pre>
+// ASSEM01 (preserves entity types)
+let bytes = serialize_assembly(&amp;entities)?;</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="types--core-data-structures"><a class="header" href="#types--core-data-structures">Types — Core Data Structures</a></h1>
-<p>The <code>types</code> module contains molex’s canonical data representations.</p>
-<h2 id="typescoords--atom-level-data"><a class="header" href="#typescoords--atom-level-data"><code>types::coords</code> — Atom-Level Data</a></h2>
-<h3 id="coords-1"><a class="header" href="#coords-1"><code>Coords</code></a></h3>
-<p>Flat parallel arrays representing atoms in a molecular structure.
-Every atom has a position (<code>CoordsAtom</code>), chain ID, residue name,
-residue number, atom name, and element type.</p>
-<p>This is the lowest-level representation — no hierarchy, no
-classification. Use <code>split_into_entities()</code> to get grouped molecules.</p>
-<h3 id="coordsatom"><a class="header" href="#coordsatom"><code>CoordsAtom</code></a></h3>
-<pre><code class="language-rust ignore">pub struct CoordsAtom {
-    pub x: f32, pub y: f32, pub z: f32,
-    pub occupancy: f32,
-    pub b_factor: f32,
+<h1 id="entity-system"><a class="header" href="#entity-system">Entity System</a></h1>
+<p>The entity system lives in <code>molex::entity</code> (source: <code>src/entity/</code>).</p>
+<h2 id="moleculeentity"><a class="header" href="#moleculeentity">MoleculeEntity</a></h2>
+<p>The central type. An enum with four variants:</p>
+<pre><code class="language-rust ignore">pub enum MoleculeEntity {
+    Protein(ProteinEntity),
+    NucleicAcid(NAEntity),
+    SmallMolecule(SmallMoleculeEntity),
+    Bulk(BulkEntity),
 }</code></pre>
-<h3 id="element"><a class="header" href="#element"><code>Element</code></a></h3>
-<p>Chemical element enum with methods for covalent radius, VDW radius,
-and CPK color. Supports lookup by symbol or by atom name heuristics.</p>
-<h3 id="binary-serialization"><a class="header" href="#binary-serialization">Binary serialization</a></h3>
-<ul>
-<li><code>serialize(&amp;coords) → Vec&lt;u8&gt;</code> — COORDS01 format (26 bytes/atom)</li>
-<li><code>deserialize(&amp;bytes) → Coords</code> — inverse</li>
-<li><code>serialize_assembly(&amp;entities) → Vec&lt;u8&gt;</code> — ASSEM01 multi-entity format</li>
-<li><code>deserialize_assembly(&amp;bytes) → Vec&lt;MoleculeEntity&gt;</code> — inverse</li>
-</ul>
-<h2 id="typesentity--molecule-classification"><a class="header" href="#typesentity--molecule-classification"><code>types::entity</code> — Molecule Classification</a></h2>
-<h3 id="moleculeentity-1"><a class="header" href="#moleculeentity-1"><code>MoleculeEntity</code></a></h3>
-<p>A classified molecule with its atom data:</p>
-<ul>
-<li><code>entity_id: u32</code> — unique identifier</li>
-<li><code>molecule_type: MoleculeType</code> — Protein, DNA, RNA, Ligand, Ion, etc.</li>
-<li><code>kind: EntityKind</code> — <code>Polymer(PolymerData)</code> or <code>AtomSet(AtomSet)</code></li>
-</ul>
-<h3 id="moleculetype"><a class="header" href="#moleculetype"><code>MoleculeType</code></a></h3>
-<pre><code class="language-rust ignore">pub enum MoleculeType {
-    Protein, DNA, RNA, Ligand, Ion, Water, Lipid, Cofactor, Solvent,
-}</code></pre>
-<h3 id="key-functions"><a class="header" href="#key-functions">Key functions</a></h3>
-<ul>
-<li><code>split_into_entities(&amp;coords) → Vec&lt;MoleculeEntity&gt;</code> — classify and group</li>
-<li><code>merge_entities(&amp;[MoleculeEntity]) → Coords</code> — flatten back to atoms</li>
-<li><code>classify_residue(name) → MoleculeType</code> — single residue lookup</li>
-</ul>
-<h2 id="typesdensity--electron-density"><a class="header" href="#typesdensity--electron-density"><code>types::density</code> — Electron Density</a></h2>
-<h3 id="densitymap"><a class="header" href="#densitymap"><code>DensityMap</code></a></h3>
-<p>3D grid of electron density values from MRC/CCP4 files:</p>
-<ul>
-<li>Grid dimensions, cell parameters, origin</li>
-<li><code>f32</code> voxel data</li>
-<li>Methods for coordinate-to-grid mapping</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="adapters--format-io"><a class="header" href="#adapters--format-io">Adapters — Format I/O</a></h1>
-<p>The <code>adapters</code> module provides parsers and serializers for common
-molecular structure file formats.</p>
-<h2 id="pdb--mmcif-adapterspdb"><a class="header" href="#pdb--mmcif-adapterspdb">PDB / mmCIF (<code>adapters::pdb</code>)</a></h2>
-<p>The primary entry point for structure files:</p>
-<pre><code class="language-rust ignore">// Auto-detect format from extension
-let coords = structure_file_to_coords("path/to/file.pdb")?;
-
-// Explicit format
-let bytes = pdb_to_coords(pdb_string)?;      // PDB → COORDS01 bytes
-let bytes = mmcif_to_coords(cif_string)?;     // mmCIF → COORDS01 bytes
-let pdb = coords_to_pdb(&amp;coords_bytes)?;      // COORDS01 → PDB string</code></pre>
-<p>Backed by the <code>pdbtbx</code> crate for robust PDB/mmCIF parsing.</p>
-<h2 id="binarycif-adaptersbcif"><a class="header" href="#binarycif-adaptersbcif">BinaryCIF (<code>adapters::bcif</code>)</a></h2>
-<p>RCSB’s compressed binary CIF format. Handles gzip-compressed files
-automatically.</p>
-<pre><code class="language-rust ignore">let bytes = bcif_to_coords(&amp;bcif_bytes)?;
-let bytes = bcif_file_to_coords("path/to/file.bcif")?;</code></pre>
-<h2 id="dcd-trajectories-adaptersdcd"><a class="header" href="#dcd-trajectories-adaptersdcd">DCD Trajectories (<code>adapters::dcd</code>)</a></h2>
-<p>CHARMM/NAMD trajectory format — a sequence of coordinate frames
-sharing the same topology.</p>
-<pre><code class="language-rust ignore">let frames: Vec&lt;DcdFrame&gt; = dcd_file_to_frames("trajectory.dcd")?;
-// Each frame: Vec&lt;f32&gt; positions (x,y,z interleaved)</code></pre>
-<p>Also provides streaming via <code>DcdReader</code> for large trajectories.</p>
-<h2 id="mrc--ccp4-density-adaptersmrc"><a class="header" href="#mrc--ccp4-density-adaptersmrc">MRC / CCP4 Density (<code>adapters::mrc</code>)</a></h2>
-<p>Electron density maps:</p>
-<pre><code class="language-rust ignore">let density = mrc_to_density(&amp;bytes)?;
-let density = mrc_file_to_density("map.mrc")?;
-// density: DensityMap with 3D grid + cell parameters</code></pre>
-<h2 id="atomworks-adaptersatomworks"><a class="header" href="#atomworks-adaptersatomworks">AtomWorks (<code>adapters::atomworks</code>)</a></h2>
-<p>Bidirectional conversion between molex entities and Biotite
-<code>AtomArray</code> objects (via PyO3). Used by ML model pipelines
-(RF3, RFdiffusion3, LigandMPNN).</p>
-<pre><code class="language-python">import molex
-
-# molex → AtomArray (for model inference)
-atom_array = molex.entities_to_atom_array(assembly_bytes)
-
-# AtomArray → molex (after prediction)
-assembly_bytes = molex.atom_array_to_entities(atom_array)
-</code></pre>
-<p>Feature-gated behind <code>python</code>.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="cif-parser"><a class="header" href="#cif-parser">CIF Parser</a></h1>
-<p>The <code>cif</code> module is a standalone CIF/STAR parser with typed data
-extraction. It operates in two layers.</p>
-<h2 id="layer-1--dom-parsing-cifparse"><a class="header" href="#layer-1--dom-parsing-cifparse">Layer 1 — DOM parsing (<code>cif::parse</code>)</a></h2>
-<pre><code class="language-rust ignore">let doc = molex::cif::parse(input)?;</code></pre>
-<p>Parses any CIF or STAR file into an untyped <code>Document</code> tree:</p>
-<ul>
-<li><code>Document</code> contains <code>Vec&lt;Block&gt;</code></li>
-<li>Each <code>Block</code> has <code>name</code>, <code>categories</code> (loop tables), and <code>pairs</code>
-(key-value entries)</li>
-<li><code>Category</code> holds <code>Column</code> data (string values, one per row)</li>
-</ul>
-<p>This layer makes no assumptions about the content — it works for
-mmCIF, CCD, reflection data, or any STAR-format file.</p>
-<h2 id="layer-2--typed-extractors-cifextract"><a class="header" href="#layer-2--typed-extractors-cifextract">Layer 2 — Typed extractors (<code>cif::extract</code>)</a></h2>
-<p>Pull structured data from a parsed <code>Block</code>:</p>
-<pre><code class="language-rust ignore">use molex::cif::extract::{CoordinateData, CifContent};
-
-// Caller knows the content type:
-let coords = CoordinateData::try_from(&amp;block)?;
-
-// Or auto-detect:
-match CifContent::try_from(&amp;block)? {
-    CifContent::Coordinates(data) =&gt; { /* atom_site data */ },
-    CifContent::Reflections(data) =&gt; { /* refln data */ },
-    CifContent::Dictionary(data)  =&gt; { /* CCD entry */ },
-}</code></pre>
-<h3 id="coordinatedata"><a class="header" href="#coordinatedata"><code>CoordinateData</code></a></h3>
-<p>Extracted from <code>_atom_site</code> loops:</p>
-<ul>
-<li>Atom positions, names, elements, B-factors, occupancy</li>
-<li>Chain IDs, residue names, residue numbers</li>
-<li>Entity ID and molecule type annotations</li>
-<li>Cell parameters and space group (if present)</li>
-</ul>
-<h3 id="reflectiondata"><a class="header" href="#reflectiondata"><code>ReflectionData</code></a></h3>
-<p>Extracted from <code>_refln</code> loops (X-ray diffraction data).</p>
-<h3 id="dictionaryentry"><a class="header" href="#dictionaryentry"><code>DictionaryEntry</code></a></h3>
-<p>Extracted from CCD (Chemical Component Dictionary) entries — ideal
-coordinates, bond tables, and chemical metadata.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="ops--transforms-and-analysis"><a class="header" href="#ops--transforms-and-analysis">Ops — Transforms and Analysis</a></h1>
-<p>The <code>ops</code> module provides coordinate manipulation, structural
-validation, and bond inference.</p>
-<h2 id="opstransform--coordinate-operations"><a class="header" href="#opstransform--coordinate-operations"><code>ops::transform</code> — Coordinate Operations</a></h2>
-<h3 id="filtering"><a class="header" href="#filtering">Filtering</a></h3>
-<pre><code class="language-rust ignore">// Keep only standard amino acid atoms
-let protein = protein_only(&amp;coords);
-
-// Keep only backbone atoms (N, CA, C)
-let backbone = backbone_only(&amp;coords);
-
-// Keep only heavy atoms (non-hydrogen)
-let heavy = heavy_atoms_only(&amp;coords);
-
-// Filter by residue name predicate
-let filtered = filter_residues(&amp;coords, |name| name == "ALA");</code></pre>
-<h3 id="backbone-extraction"><a class="header" href="#backbone-extraction">Backbone extraction</a></h3>
-<pre><code class="language-rust ignore">// Extract CA chains as Vec&lt;Vec&lt;Vec3&gt;&gt;
-let chains = extract_backbone_chains(&amp;coords);
-
-// Get all CA positions as flat Vec&lt;Vec3&gt;
-let cas = extract_ca_positions(&amp;coords);</code></pre>
-<h3 id="alignment"><a class="header" href="#alignment">Alignment</a></h3>
-<p>Kabsch algorithm for optimal rigid-body superposition:</p>
-<pre><code class="language-rust ignore">let (aligned, rmsd) = kabsch_alignment(&amp;mobile, &amp;reference);
-
-// With uniform scaling
-let (aligned, rmsd) = kabsch_alignment_with_scale(&amp;mobile, &amp;reference);
-
-// Binary COORDS alignment (convenience wrapper)
-let aligned_bytes = align_coords_bytes(&amp;mobile_bytes, &amp;reference_bytes)?;</code></pre>
-<h3 id="interpolation"><a class="header" href="#interpolation">Interpolation</a></h3>
-<p>Smooth coordinate transitions for animation:</p>
-<pre><code class="language-rust ignore">let interpolated = interpolate_coords(&amp;start, &amp;end, t);  // t in [0, 1]
-
-// Collapse-expand: shrink to centroid then expand to target
-let interp = interpolate_coords_collapse(&amp;start, &amp;end, t);</code></pre>
-<h3 id="atom-lookup"><a class="header" href="#atom-lookup">Atom lookup</a></h3>
-<pre><code class="language-rust ignore">let pos = get_atom_position(&amp;coords, chain_id, res_num, "CA");
-let (pos, name) = get_closest_atom_for_residue(&amp;coords, chain, res, point);</code></pre>
-<h2 id="opsvalidation--completeness-checks"><a class="header" href="#opsvalidation--completeness-checks"><code>ops::validation</code> — Completeness Checks</a></h2>
-<pre><code class="language-rust ignore">let report = completeness_report(&amp;coords);
-let has_bb = has_complete_backbone(&amp;coords);
-let counts: AtomCounts = atom_counts(&amp;coords);</code></pre>
-<h2 id="opsbond_inference--distance-based-bonds"><a class="header" href="#opsbond_inference--distance-based-bonds"><code>ops::bond_inference</code> — Distance-Based Bonds</a></h2>
-<p>Infer covalent bonds from interatomic distances using element-specific
-covalent radii:</p>
-<pre><code class="language-rust ignore">let bonds: Vec&lt;InferredBond&gt; = infer_bonds(&amp;coords, DEFAULT_TOLERANCE);
-// InferredBond { atom_a, atom_b, order: BondOrder }</code></pre>
-<p>Used as a fallback for ligands and cofactors that lack explicit bond
-tables.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="render--visualization-data"><a class="header" href="#render--visualization-data">Render — Visualization Data</a></h1>
-<p>The <code>render</code> module extracts GPU-ready data from <code>Coords</code> and
-<code>MoleculeEntity</code> values. It serves as the bridge between molex’s
-canonical types and rendering engines like viso.</p>
-<h2 id="rendercoords-1"><a class="header" href="#rendercoords-1"><code>RenderCoords</code></a></h2>
-<p>The primary output type, containing separated backbone and sidechain
-data with bond connectivity:</p>
-<pre><code class="language-rust ignore">let render = RenderCoords::from_entity(&amp;entity, is_hydrophobic, get_bonds);</code></pre>
-<h3 id="fields"><a class="header" href="#fields">Fields</a></h3>
+<p>Common methods available on all variants (delegated to the inner type):</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+<tr><th>Method</th><th>Returns</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><code>backbone_chains</code></td><td><code>Vec&lt;Vec&lt;Vec3&gt;&gt;</code></td><td>N-CA-C position triples per chain</td></tr>
-<tr><td><code>backbone_chain_ids</code></td><td><code>Vec&lt;u8&gt;</code></td><td>Chain ID for each backbone chain</td></tr>
-<tr><td><code>backbone_residue_chains</code></td><td><code>Vec&lt;Vec&lt;RenderBackboneResidue&gt;&gt;</code></td><td>Full N/CA/C/O per residue</td></tr>
-<tr><td><code>sidechain_atoms</code></td><td><code>Vec&lt;RenderSidechainAtom&gt;</code></td><td>Non-backbone heavy atoms</td></tr>
-<tr><td><code>sidechain_bonds</code></td><td><code>Vec&lt;(u32, u32)&gt;</code></td><td>Sidechain bond pairs (indices into <code>sidechain_atoms</code>)</td></tr>
-<tr><td><code>backbone_sidechain_bonds</code></td><td><code>Vec&lt;(Vec3, u32)&gt;</code></td><td>CA→CB connections</td></tr>
-<tr><td><code>all_positions</code></td><td><code>Vec&lt;Vec3&gt;</code></td><td>Every atom position (for bounding box, picking)</td></tr>
+<tr><td><code>id()</code></td><td><code>EntityId</code></td><td>Unique identifier</td></tr>
+<tr><td><code>molecule_type()</code></td><td><code>MoleculeType</code></td><td>Classification (Protein, DNA, Ligand, etc.)</td></tr>
+<tr><td><code>atom_set()</code></td><td><code>&amp;[Atom]</code></td><td>All atoms</td></tr>
+<tr><td><code>atom_count()</code></td><td><code>usize</code></td><td>Number of atoms</td></tr>
+<tr><td><code>positions()</code></td><td><code>Vec&lt;Vec3&gt;</code></td><td>All atom positions</td></tr>
+<tr><td><code>label()</code></td><td><code>String</code></td><td>Human-readable label (e.g. “Protein A”, “Ligand (ATP)”)</td></tr>
+<tr><td><code>aabb()</code></td><td><code>Option&lt;Aabb&gt;</code></td><td>Axis-aligned bounding box</td></tr>
+<tr><td><code>to_coords()</code></td><td><code>Coords</code></td><td>Flatten to wire format</td></tr>
+<tr><td><code>residue_count()</code></td><td><code>usize</code></td><td>Residues (polymer) or molecules (bulk)</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="construction-methods"><a class="header" href="#construction-methods">Construction methods</a></h3>
-<ul>
-<li><code>from_entity()</code> — from a <code>MoleculeEntity</code> with topology callbacks</li>
-<li><code>from_coords_with_topology()</code> — from raw <code>Coords</code> with callbacks</li>
-<li><code>from_coords()</code> — minimal extraction (no bonds or hydrophobicity)</li>
-</ul>
-<h3 id="queries"><a class="header" href="#queries">Queries</a></h3>
-<pre><code class="language-rust ignore">render.get_atom_position(residue_idx, "CB")  // Option&lt;Vec3&gt;
-render.find_closest_atom(residue_idx, point) // Option&lt;(Vec3, String)&gt;
-render.ca_positions()                        // Vec&lt;Vec3&gt;
-render.residue_count()                       // usize</code></pre>
-<h2 id="renderbackbone"><a class="header" href="#renderbackbone"><code>render::backbone</code></a></h2>
-<p>Backbone-specific extraction from <code>MoleculeEntity</code>:</p>
-<ul>
-<li><code>BackboneData</code> — chains as flat CA arrays + chain IDs</li>
-<li><code>ca_positions_from_chains()</code> — extract CA positions from N-CA-C chains</li>
-</ul>
-<h2 id="rendersidechain"><a class="header" href="#rendersidechain"><code>render::sidechain</code></a></h2>
-<p>Sidechain extraction with bond topology:</p>
-<ul>
-<li><code>SidechainAtoms</code> — atom positions, names, bonds, hydrophobicity</li>
-<li><code>SidechainAtomData</code> — per-atom data struct</li>
-</ul>
-<h2 id="extract_sequences"><a class="header" href="#extract_sequences"><code>extract_sequences()</code></a></h2>
-<p>Extract amino acid sequences from <code>Coords</code>:</p>
-<pre><code class="language-rust ignore">let (full_sequence, chain_sequences) = extract_sequences(&amp;coords);
-// full_sequence: "MQIFVKTL..."
-// chain_sequences: vec![(b'A', "MQIFVKTL..."), (b'B', "...")]</code></pre>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="secondary-structure"><a class="header" href="#secondary-structure">Secondary Structure</a></h1>
-<p>The <code>secondary_structure</code> module classifies protein residues into
-helix, sheet, coil, and turn based on backbone geometry.</p>
-<h2 id="sstype"><a class="header" href="#sstype"><code>SSType</code></a></h2>
-<pre><code class="language-rust ignore">pub enum SSType {
-    Helix,   // alpha-helix (H)
-    Sheet,   // beta-strand (E)
-    Coil,    // unstructured (C)
-    Turn,    // hydrogen-bonded turn (T)
+<p>Variant-specific downcasting: <code>as_protein()</code>, <code>as_nucleic_acid()</code>, <code>as_small_molecule()</code>, <code>as_bulk()</code>.</p>
+<h2 id="moleculetype"><a class="header" href="#moleculetype">MoleculeType</a></h2>
+<pre><code class="language-rust ignore">pub enum MoleculeType {
+    Protein, DNA, RNA, Ligand, Ion, Water, Lipid, Cofactor, Solvent,
 }</code></pre>
-<p>Implements <code>From&lt;char&gt;</code> for Q8-style single-letter codes and
-<code>Display</code> for the reverse mapping.</p>
-<h2 id="dssp-algorithm-dssp-submodule"><a class="header" href="#dssp-algorithm-dssp-submodule">DSSP algorithm (<code>dssp</code> submodule)</a></h2>
-<p>The primary classification method. Computes hydrogen bond energies
-from backbone N-H…O=C geometry and assigns secondary structure
-based on the standard DSSP criteria.</p>
-<pre><code class="language-rust ignore">use molex::secondary_structure::dssp;
+<p>Residue names are mapped to molecule types by <code>classify_residue()</code> using built-in lookup tables.</p>
+<h2 id="atom"><a class="header" href="#atom">Atom</a></h2>
+<pre><code class="language-rust ignore">pub struct Atom {
+    pub position: Vec3,    // 3D position in angstroms
+    pub occupancy: f32,    // 0.0 to 1.0
+    pub b_factor: f32,     // temperature factor
+    pub element: Element,  // chemical element
+    pub name: [u8; 4],     // PDB atom name (e.g. b"CA  ")
+}</code></pre>
+<p>Residue name, residue number, and chain ID are stored on the entity/residue that owns the atom.</p>
+<h2 id="proteinentity"><a class="header" href="#proteinentity">ProteinEntity</a></h2>
+<p>A single protein chain. Implements both <code>Entity</code> and <code>Polymer</code> traits.</p>
+<pre><code class="language-rust ignore">pub struct ProteinEntity {
+    pub id: EntityId,
+    pub atoms: Vec&lt;Atom&gt;,
+    pub residues: Vec&lt;Residue&gt;,       // name, number, atom_range
+    pub segment_breaks: Vec&lt;usize&gt;,   // backbone gap indices
+    pub pdb_chain_id: u8,
+}</code></pre>
+<p>Derived views (computed on each call, not cached):</p>
+<ul>
+<li><code>to_backbone() -&gt; Vec&lt;ResidueBackbone&gt;</code> – N, CA, C, O positions per residue</li>
+<li><code>to_protein_residues(is_hydrophobic, get_bonds) -&gt; Vec&lt;ProteinResidue&gt;</code> – full residue view with sidechain atoms and bond topology</li>
+<li><code>to_interleaved_segments() -&gt; Vec&lt;Vec&lt;Vec3&gt;&gt;</code> – N/CA/C positions per continuous segment (for spline rendering)</li>
+</ul>
+<p>Segment breaks are computed automatically from C(i)-&gt;N(i+1) distance &gt; 2.0 angstroms.</p>
+<h2 id="naentity"><a class="header" href="#naentity">NAEntity</a></h2>
+<p>A single DNA or RNA chain. Same structure as <code>ProteinEntity</code> (atoms, residues, segment breaks, chain ID). Implements <code>Entity</code> and <code>Polymer</code>.</p>
+<h2 id="smallmoleculeentity"><a class="header" href="#smallmoleculeentity">SmallMoleculeEntity</a></h2>
+<p>A single non-polymer molecule (ligand, ion, cofactor, lipid). Implements <code>Entity</code> only.</p>
+<h2 id="bulkentity"><a class="header" href="#bulkentity">BulkEntity</a></h2>
+<p>A group of identical small molecules (water, solvent). All atoms stored in a single flat <code>Vec&lt;Atom&gt;</code>. Implements <code>Entity</code> only.</p>
+<h2 id="entityid"><a class="header" href="#entityid">EntityId</a></h2>
+<p>An opaque identifier allocated by <code>EntityIdAllocator</code>. Entities within a structure have unique IDs. The allocator is a simple incrementing counter.</p>
+<h2 id="entity-and-polymer-traits"><a class="header" href="#entity-and-polymer-traits">Entity and Polymer traits</a></h2>
+<pre><code class="language-rust ignore">pub trait Entity {
+    fn id(&amp;self) -&gt; EntityId;
+    fn molecule_type(&amp;self) -&gt; MoleculeType;
+    fn atoms(&amp;self) -&gt; &amp;[Atom];
+    fn positions(&amp;self) -&gt; Vec&lt;Vec3&gt;;     // default impl
+    fn atom_count(&amp;self) -&gt; usize;        // default impl
+}
 
-// From a MoleculeEntity
-let ss: Vec&lt;SSType&gt; = dssp::from_entity(&amp;entity);
-
-// From a Q8 string (e.g., from PDB HELIX/SHEET records)
-let ss: Vec&lt;SSType&gt; = dssp::from_string("HHHHCCCEEEECCC");</code></pre>
-<h2 id="auto-detection-auto-submodule"><a class="header" href="#auto-detection-auto-submodule">Auto-detection (<code>auto</code> submodule)</a></h2>
-<p>Fallback method using dihedral angle (phi/psi) ranges when full
-DSSP is not needed:</p>
-<pre><code class="language-rust ignore">use molex::secondary_structure::auto::detect;
-
-let ss: Vec&lt;SSType&gt; = detect(&amp;backbone_residues);</code></pre>
-<h2 id="resolution-and-override"><a class="header" href="#resolution-and-override">Resolution and override</a></h2>
-<p>The <code>resolve()</code> function merges DSSP output with optional per-entity
-Q8 overrides:</p>
-<pre><code class="language-rust ignore">use molex::secondary_structure::{resolve, DetectionInput};
-
-let input = DetectionInput { entity, override_q8: Some("HHHCCCEEE") };
-let ss = resolve(&amp;input);</code></pre>
-<p>This is the entry point used by viso’s scene metadata pipeline.</p>
+pub trait Polymer: Entity {
+    fn residues(&amp;self) -&gt; &amp;[Residue];
+    fn residue_count(&amp;self) -&gt; usize;     // default impl
+    fn segment_breaks(&amp;self) -&gt; &amp;[usize];
+    fn segment_count(&amp;self) -&gt; usize;     // default impl
+    fn segment_range(&amp;self, idx: usize) -&gt; Range&lt;usize&gt;;  // default impl
+    fn segment_residues(&amp;self, idx: usize) -&gt; &amp;[Residue];  // default impl
+}</code></pre>
+<h2 id="surface-types-1"><a class="header" href="#surface-types-1">Surface types</a></h2>
+<p>The <code>entity::surface</code> module provides:</p>
+<ul>
+<li><strong><code>VoxelGrid</code></strong> – 3D <code>Array3&lt;f32&gt;</code> grid with unit cell metadata (dimensions, angles, origin, sampling intervals). Provides <code>voxel_size()</code> and <code>frac_to_cart_matrix()</code> for coordinate conversion.</li>
+<li><strong><code>Density</code></strong> – wraps <code>VoxelGrid</code> with density map metadata. Constructed by <code>mrc_file_to_density()</code> or <code>mrc_to_density()</code>.</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="ffi--c-bindings"><a class="header" href="#ffi--c-bindings">FFI — C Bindings</a></h1>
-<p>The <code>ffi</code> module provides <code>extern "C"</code> functions for integration with
-C and C++ applications. These are re-exported by <code>foldit-runner</code> for
-inclusion in its generated C header.</p>
-<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
-<h3 id="coords_from_backbone"><a class="header" href="#coords_from_backbone"><code>coords_from_backbone</code></a></h3>
-<pre><code class="language-c">CoordsResult coords_from_backbone(
-    const float* positions,  // [x,y,z] × n_atoms
-    uint32_t n_atoms,
-    const uint8_t* chain_ids,
-    const int32_t* res_nums,
-    const char (*res_names)[4],  // 3-letter codes, null-padded
-    const char (*atom_names)[5]  // 4-letter codes, null-padded
-);
-</code></pre>
-<p>Constructs COORDS01 bytes from raw arrays. Returns a <code>CoordsResult</code>
-containing either serialized bytes or an error string.</p>
-<h3 id="coords_free_result"><a class="header" href="#coords_free_result"><code>coords_free_result</code></a></h3>
-<p>Free memory allocated by <code>coords_from_backbone</code>.</p>
-<h3 id="coords_free_string"><a class="header" href="#coords_free_string"><code>coords_free_string</code></a></h3>
-<p>Free an error string from a <code>CoordsResult</code>.</p>
-<h2 id="coordsresult"><a class="header" href="#coordsresult"><code>CoordsResult</code></a></h2>
+<h1 id="adapters"><a class="header" href="#adapters">Adapters</a></h1>
+<p>Format adapters live in <code>molex::adapters</code> (source: <code>src/adapters/</code>). Each adapter’s primary API returns <code>Vec&lt;MoleculeEntity&gt;</code>. Coords-based variants are available for FFI/IPC consumers.</p>
+<h2 id="pdb-adapterspdb"><a class="header" href="#pdb-adapterspdb">PDB (<code>adapters::pdb</code>)</a></h2>
+<p>Parses PDB files using the <code>pdbtbx</code> crate. Handles non-standard lines (GROMACS/MemProtMD output) via sanitization.</p>
+<pre><code class="language-rust ignore">// Primary API
+pdb_file_to_entities(path: &amp;Path) -&gt; Result&lt;Vec&lt;MoleculeEntity&gt;, CoordsError&gt;
+pdb_str_to_entities(pdb_str: &amp;str) -&gt; Result&lt;Vec&lt;MoleculeEntity&gt;, CoordsError&gt;
+structure_file_to_entities(path: &amp;Path) -&gt; Result&lt;Vec&lt;MoleculeEntity&gt;, CoordsError&gt;
+
+// Derived Coords API
+pdb_file_to_coords(path: &amp;Path) -&gt; Result&lt;Coords, CoordsError&gt;
+pdb_str_to_coords(pdb_str: &amp;str) -&gt; Result&lt;Coords, CoordsError&gt;
+pdb_to_coords(pdb_str: &amp;str) -&gt; Result&lt;Vec&lt;u8&gt;, CoordsError&gt;  // serialized bytes
+
+// Coords -&gt; PDB
+coords_to_pdb(coords_bytes: &amp;[u8]) -&gt; Result&lt;String, CoordsError&gt;</code></pre>
+<p><code>structure_file_to_entities</code> auto-detects PDB vs mmCIF by file extension (<code>.pdb</code>/<code>.ent</code> -&gt; PDB, everything else -&gt; mmCIF).</p>
+<h2 id="mmcif-adapterscif"><a class="header" href="#mmcif-adapterscif">mmCIF (<code>adapters::cif</code>)</a></h2>
+<p>Custom DOM-based parser (no external crate). Parses CIF text into a DOM, then extracts atom sites via typed extractors.</p>
+<pre><code class="language-rust ignore">mmcif_file_to_entities(path: &amp;Path) -&gt; Result&lt;Vec&lt;MoleculeEntity&gt;, CoordsError&gt;
+mmcif_str_to_entities(cif_str: &amp;str) -&gt; Result&lt;Vec&lt;MoleculeEntity&gt;, CoordsError&gt;
+
+mmcif_file_to_coords(path: &amp;Path) -&gt; Result&lt;Coords, CoordsError&gt;
+mmcif_str_to_coords(cif_str: &amp;str) -&gt; Result&lt;Coords, CoordsError&gt;</code></pre>
+<h2 id="binarycif-adaptersbcif"><a class="header" href="#binarycif-adaptersbcif">BinaryCIF (<code>adapters::bcif</code>)</a></h2>
+<p>Decodes BinaryCIF (MessagePack-encoded CIF) with column-level codecs.</p>
+<pre><code class="language-rust ignore">bcif_file_to_entities(path: &amp;Path) -&gt; Result&lt;Vec&lt;MoleculeEntity&gt;, CoordsError&gt;
+bcif_to_entities(data: &amp;[u8]) -&gt; Result&lt;Vec&lt;MoleculeEntity&gt;, CoordsError&gt;
+
+bcif_file_to_coords(path: &amp;Path) -&gt; Result&lt;Coords, CoordsError&gt;
+bcif_to_coords(data: &amp;[u8]) -&gt; Result&lt;Coords, CoordsError&gt;</code></pre>
+<h2 id="mrcccp4-density-maps-adaptersmrc"><a class="header" href="#mrcccp4-density-maps-adaptersmrc">MRC/CCP4 density maps (<code>adapters::mrc</code>)</a></h2>
+<p>Parses MRC/CCP4 format electron density maps into <code>Density</code> (which wraps <code>VoxelGrid</code>).</p>
+<pre><code class="language-rust ignore">mrc_file_to_density(path: &amp;Path) -&gt; Result&lt;Density, DensityError&gt;
+mrc_to_density(data: &amp;[u8]) -&gt; Result&lt;Density, DensityError&gt;</code></pre>
+<h2 id="dcd-trajectories-adaptersdcd"><a class="header" href="#dcd-trajectories-adaptersdcd">DCD trajectories (<code>adapters::dcd</code>)</a></h2>
+<p>Reads DCD binary trajectory files (CHARMM/NAMD format).</p>
+<pre><code class="language-rust ignore">dcd_file_to_frames(path: &amp;Path) -&gt; Result&lt;Vec&lt;DcdFrame&gt;, CoordsError&gt;
+
+pub struct DcdHeader { /* timestep, n_atoms, etc. */ }
+pub struct DcdFrame { pub x: Vec&lt;f32&gt;, pub y: Vec&lt;f32&gt;, pub z: Vec&lt;f32&gt; }
+pub struct DcdReader&lt;R&gt; { /* streaming reader */ }</code></pre>
+<h2 id="atomworks-adaptersatomworks-feature--python"><a class="header" href="#atomworks-adaptersatomworks-feature--python">AtomWorks (<code>adapters::atomworks</code>, feature = <code>python</code>)</a></h2>
+<p>Bidirectional conversion between molex entities and Biotite <code>AtomArray</code> objects with AtomWorks annotations. Requires the <code>python</code> feature.</p>
+<p>Entity-aware functions (preserve molecule type, entity ID, chain grouping):</p>
+<pre><code class="language-rust ignore">entities_to_atom_array(assembly_bytes: Vec&lt;u8&gt;) -&gt; PyResult&lt;PyObject&gt;
+entities_to_atom_array_plus(assembly_bytes: Vec&lt;u8&gt;) -&gt; PyResult&lt;PyObject&gt;
+atom_array_to_entities(atom_array: PyObject) -&gt; PyResult&lt;Vec&lt;u8&gt;&gt;
+entities_to_atom_array_parsed(assembly_bytes: Vec&lt;u8&gt;, filename: &amp;str) -&gt; PyResult&lt;PyObject&gt;
+parse_file_to_entities(path: &amp;str) -&gt; PyResult&lt;Vec&lt;u8&gt;&gt;
+parse_file_full(path: &amp;str) -&gt; PyResult&lt;PyObject&gt;</code></pre>
+<p>Flat Coords functions:</p>
+<pre><code class="language-rust ignore">coords_to_atom_array(py: Python, coords_bytes: Vec&lt;u8&gt;) -&gt; PyResult&lt;PyObject&gt;
+coords_to_atom_array_plus(py: Python, coords_bytes: Vec&lt;u8&gt;) -&gt; PyResult&lt;PyObject&gt;
+atom_array_to_coords(atom_array: PyObject) -&gt; PyResult&lt;Vec&lt;u8&gt;&gt;</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="analysis"><a class="header" href="#analysis">Analysis</a></h1>
+<p>Structural analysis lives in <code>molex::analysis</code> (source: <code>src/analysis/</code>). All analysis functions operate on entity-level types (<code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>).</p>
+<h2 id="secondary-structure-analysisss"><a class="header" href="#secondary-structure-analysisss">Secondary structure (<code>analysis::ss</code>)</a></h2>
+<p>DSSP-based secondary structure classification.</p>
+<pre><code class="language-rust ignore">use molex::analysis::{detect_dssp, resolve_ss, SSType};
+
+// Full DSSP: detect H-bonds, then classify
+let (ss_types, hbonds) = detect_dssp(&amp;backbone_residues);
+// ss_types: Vec&lt;SSType&gt; -- one per residue (Helix, Sheet, or Coil)
+// hbonds: Vec&lt;HBond&gt; -- backbone H-bond pairs that produced the assignment
+
+// With optional override (e.g. from mmCIF annotation)
+let ss = resolve_ss(Some(&amp;override_ss), &amp;backbone_residues);
+// Falls back to DSSP if override is None</code></pre>
+<p><code>SSType</code> is a Q3 classification:</p>
+<pre><code class="language-rust ignore">pub enum SSType { Helix, Sheet, Coil }</code></pre>
+<p>Each variant has a <code>.color()</code> method returning an RGB <code>[f32; 3]</code> for rendering.</p>
+<p>Short isolated segments (1-residue helix/sheet runs) are automatically merged to <code>Coil</code> by <code>merge_short_segments</code>.</p>
+<h3 id="ss-from-string"><a class="header" href="#ss-from-string">SS from string</a></h3>
+<p><code>analysis::ss::from_string</code> parses secondary structure strings (e.g. <code>"HHHCCCEEE"</code>) into <code>Vec&lt;SSType&gt;</code>.</p>
+<h2 id="bond-detection-analysisbonds"><a class="header" href="#bond-detection-analysisbonds">Bond detection (<code>analysis::bonds</code>)</a></h2>
+<h3 id="covalent-bonds"><a class="header" href="#covalent-bonds">Covalent bonds</a></h3>
+<pre><code class="language-rust ignore">use molex::analysis::{infer_bonds, InferredBond, BondOrder, DEFAULT_TOLERANCE};
+
+let bonds: Vec&lt;InferredBond&gt; = infer_bonds(atoms, tolerance);
+// InferredBond { atom_a: usize, atom_b: usize, order: BondOrder }
+// BondOrder: Single, Double, Triple, Aromatic</code></pre>
+<p>Distance-based inference using element covalent radii with a configurable tolerance (default: <code>DEFAULT_TOLERANCE</code>).</p>
+<h3 id="hydrogen-bonds"><a class="header" href="#hydrogen-bonds">Hydrogen bonds</a></h3>
+<pre><code class="language-rust ignore">use molex::analysis::detect_hbonds;
+
+let hbonds: Vec&lt;HBond&gt; = detect_hbonds(&amp;backbone_residues);
+// HBond { donor: usize, acceptor: usize } -- residue indices</code></pre>
+<p>DSSP-style backbone N-H…O=C hydrogen bond detection using electrostatic energy criteria.</p>
+<h3 id="disulfide-bonds"><a class="header" href="#disulfide-bonds">Disulfide bonds</a></h3>
+<pre><code class="language-rust ignore">use molex::analysis::{detect_disulfide_bonds, DisulfideBond};
+
+let disulfides: Vec&lt;DisulfideBond&gt; = detect_disulfide_bonds(atoms);</code></pre>
+<p>Detects CYS SG-SG bonds by distance.</p>
+<h2 id="bounding-box-analysisaabb"><a class="header" href="#bounding-box-analysisaabb">Bounding box (<code>analysis::aabb</code>)</a></h2>
+<pre><code class="language-rust ignore">use molex::analysis::Aabb;
+
+let aabb = Aabb::from_positions(&amp;positions)?;
+aabb.center();   // Vec3 -- geometric center
+aabb.extents();  // Vec3 -- size along each axis
+aabb.radius();   // f32 -- bounding sphere radius
+
+let merged = aabb.union(&amp;other_aabb);
+let combined = Aabb::from_aabbs(&amp;[aabb1, aabb2, aabb3])?;</code></pre>
+<p>Also available directly on entities: <code>entity.aabb()</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="codec"><a class="header" href="#codec">Codec</a></h1>
+<p>Wire formats, serialization, and entity splitting/merging live in <code>molex::ops::codec</code> (source: <code>src/ops/codec/</code>).</p>
+<h2 id="coords"><a class="header" href="#coords">Coords</a></h2>
+<p>The flat, column-oriented wire format:</p>
+<pre><code class="language-rust ignore">pub struct Coords {
+    pub num_atoms: usize,
+    pub atoms: Vec&lt;CoordsAtom&gt;,       // x, y, z, occupancy, b_factor
+    pub chain_ids: Vec&lt;u8&gt;,           // per-atom chain ID byte
+    pub res_names: Vec&lt;[u8; 3]&gt;,      // per-atom residue name
+    pub res_nums: Vec&lt;i32&gt;,           // per-atom residue number
+    pub atom_names: Vec&lt;[u8; 4]&gt;,     // per-atom PDB atom name
+    pub elements: Vec&lt;Element&gt;,       // per-atom element
+}</code></pre>
+<p><code>Coords</code> is a serialization/interop format for FFI and IPC.</p>
+<h2 id="wire-formats"><a class="header" href="#wire-formats">Wire formats</a></h2>
+<h3 id="coords01"><a class="header" href="#coords01">COORDS01</a></h3>
+<p>Flat atom array binary format. Header magic: <code>COORDS01</code> (backward-compatible reader also handles <code>COORDS00</code> which omits elements).</p>
+<pre><code class="language-rust ignore">use molex::ops::codec::{serialize, deserialize};
+
+let bytes: Vec&lt;u8&gt; = serialize(&amp;coords)?;
+let coords: Coords = deserialize(&amp;bytes)?;</code></pre>
+<h3 id="assem01"><a class="header" href="#assem01">ASSEM01</a></h3>
+<p>Entity-aware binary format that preserves molecule type metadata per entity. Header magic: <code>ASSEM01\0</code>. Use this when you need to round-trip entities without re-running residue classification.</p>
+<pre><code class="language-rust ignore">use molex::ops::codec::{serialize_assembly, deserialize_assembly};
+
+let bytes: Vec&lt;u8&gt; = serialize_assembly(&amp;entities)?;
+let entities: Vec&lt;MoleculeEntity&gt; = deserialize_assembly(&amp;bytes)?;</code></pre>
+<h2 id="entity-splitting-and-merging"><a class="header" href="#entity-splitting-and-merging">Entity splitting and merging</a></h2>
+<pre><code class="language-rust ignore">use molex::ops::codec::{split_into_entities, merge_entities};
+
+// Coords -&gt; entities (classifies residues, groups by chain)
+let entities: Vec&lt;MoleculeEntity&gt; = split_into_entities(&amp;coords);
+
+// Entities -&gt; Coords (flattens back)
+let coords: Coords = merge_entities(&amp;entities);</code></pre>
+<p><code>split_into_entities</code> groups atoms by:</p>
+<ul>
+<li>Chain ID + molecule type for polymers (one entity per chain)</li>
+<li>Chain ID + residue number for small molecules (one entity per molecule)</li>
+<li>All waters into a single <code>Bulk</code> entity</li>
+<li>All solvents into a single <code>Bulk</code> entity</li>
+</ul>
+<h2 id="transforms-opstransform"><a class="header" href="#transforms-opstransform">Transforms (<code>ops::transform</code>)</a></h2>
+<p>Structural alignment and extraction utilities:</p>
+<pre><code class="language-rust ignore">use molex::ops::transform::*;
+
+// Kabsch alignment (minimize RMSD between point sets)
+let (rotation, translation) = kabsch_alignment(&amp;source, &amp;target);
+let (rotation, translation, scale) = kabsch_alignment_with_scale(&amp;source, &amp;target);
+
+// Apply transform to entities
+transform_entities(&amp;mut entities, &amp;rotation, &amp;translation);
+
+// Align entities to a reference structure
+align_to_reference(&amp;mut mobile, &amp;reference);
+
+// Extract alpha-carbon positions
+let ca_positions: Vec&lt;Vec3&gt; = extract_ca_positions(&amp;entities);
+let ca_by_chain: Vec&lt;Vec&lt;Vec3&gt;&gt; = extract_ca_from_chains(&amp;entities);
+
+// Get continuous backbone segments
+let segments: Vec&lt;Vec&lt;Vec3&gt;&gt; = extract_backbone_segments(&amp;entities);
+
+// Compute centroid
+let center: Vec3 = centroid(&amp;positions);</code></pre>
+<h2 id="chainidmapper"><a class="header" href="#chainidmapper">ChainIdMapper</a></h2>
+<p>Maps multi-character chain ID strings (e.g. “AA”, “AB” for structures with &gt;26 chains) to unique <code>u8</code> values for the <code>Coords</code> format:</p>
+<pre><code class="language-rust ignore">let mut mapper = ChainIdMapper::new();
+let id = mapper.get_or_assign("AA"); // assigns a unique byte</code></pre>
+<h2 id="error-type"><a class="header" href="#error-type">Error type</a></h2>
+<p>All codec operations return <code>CoordsError</code>:</p>
+<pre><code class="language-rust ignore">pub enum CoordsError {
+    InvalidFormat(String),
+    PdbParseError(String),
+    SerializationError(String),
+}</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="c-ffi"><a class="header" href="#c-ffi">C FFI</a></h1>
+<p>C-compatible bindings live in <code>molex::ffi</code> (source: <code>src/ffi.rs</code>). These expose COORDS conversion functions for consumption from C, C++, Swift, or any language with C FFI support.</p>
+<h2 id="result-type"><a class="header" href="#result-type">Result type</a></h2>
 <pre><code class="language-c">typedef struct {
-    const uint8_t* data;   // COORDS01 bytes (null on error)
-    uint32_t len;          // byte length
-    const char* error;     // error message (null on success)
+    const uint8_t *data;    // output bytes, or NULL on error
+    size_t len;             // data length
+    size_t data_len;        // allocated capacity
+    const char *error;      // error string, or NULL on success
 } CoordsResult;
 </code></pre>
-<h2 id="usage-from-c"><a class="header" href="#usage-from-c">Usage from C++</a></h2>
-<pre><code class="language-cpp">#include "molex.h"
-
-auto result = coords_from_backbone(
-    positions.data(), n_atoms,
-    chain_ids.data(), res_nums.data(),
-    res_names.data(), atom_names.data()
-);
-
-if (result.error) {
-    fprintf(stderr, "Error: %s\n", result.error);
-    coords_free_string(result.error);
-} else {
-    // Use result.data[0..result.len]
-    coords_free_result(result);
-}
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="pdb_to_coords_bytes"><a class="header" href="#pdb_to_coords_bytes"><code>pdb_to_coords_bytes</code></a></h3>
+<p>Parse a PDB string into COORDS binary format.</p>
+<pre><code class="language-c">CoordsResult pdb_to_coords_bytes(const char *pdb_ptr, size_t pdb_len);
 </code></pre>
+<h3 id="coords_to_pdb"><a class="header" href="#coords_to_pdb"><code>coords_to_pdb</code></a></h3>
+<p>Convert COORDS binary to a PDB-format string. Returns a null-terminated C string. The caller must free the string with <code>coords_free_string</code>.</p>
+<pre><code class="language-c">const char *coords_to_pdb(const uint8_t *coords_ptr, size_t coords_len, size_t *out_len);
+</code></pre>
+<h3 id="coords_from_coords"><a class="header" href="#coords_from_coords"><code>coords_from_coords</code></a></h3>
+<p>Deserialize and re-serialize COORDS bytes (round-trip validation).</p>
+<pre><code class="language-c">CoordsResult coords_from_coords(const uint8_t *coords_ptr, size_t coords_len);
+</code></pre>
+<h3 id="coords_from_backbone"><a class="header" href="#coords_from_backbone"><code>coords_from_backbone</code></a></h3>
+<p>Build COORDS from backbone positions. Currently returns an error (not yet implemented).</p>
+<pre><code class="language-c">CoordsResult coords_from_backbone(
+    const float *positions,
+    size_t num_res,
+    const char *sequence,
+    const int32_t *chain_breaks,
+    size_t chain_break_count
+);
+</code></pre>
+<h2 id="memory-management"><a class="header" href="#memory-management">Memory management</a></h2>
+<pre><code class="language-c">void coords_free_result(const CoordsResult *result);
+void coords_free_string(const char *s);
+</code></pre>
+<p>All pointers returned by FFI functions must be freed using the corresponding free function. Do not use <code>free()</code> directly.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="python-bindings"><a class="header" href="#python-bindings">Python Bindings</a></h1>
-<p>molex provides Python bindings via PyO3, enabled with the <code>python</code>
-feature flag. The module is built with maturin.</p>
+<p>Python bindings are available when molex is built with the <code>python</code> feature. The module is exposed as <code>import molex</code> via PyO3.</p>
 <h2 id="installation-1"><a class="header" href="#installation-1">Installation</a></h2>
 <pre><code class="language-bash">cd crates/molex
 maturin develop --release --features python
 </code></pre>
-<h2 id="core-functions"><a class="header" href="#core-functions">Core functions</a></h2>
-<h3 id="pdb_to_coordspdb_string--bytes"><a class="header" href="#pdb_to_coordspdb_string--bytes"><code>pdb_to_coords(pdb_string) → bytes</code></a></h3>
-<p>Parse a PDB string and return COORDS01 binary bytes.</p>
-<h3 id="mmcif_to_coordscif_string--bytes"><a class="header" href="#mmcif_to_coordscif_string--bytes"><code>mmcif_to_coords(cif_string) → bytes</code></a></h3>
-<p>Parse an mmCIF string and return COORDS01 binary bytes.</p>
-<h3 id="coords_to_pdbcoords_bytes--str"><a class="header" href="#coords_to_pdbcoords_bytes--str"><code>coords_to_pdb(coords_bytes) → str</code></a></h3>
-<p>Convert COORDS01 bytes back to a PDB-format string.</p>
-<h3 id="deserialize_coordscoords_bytes--dict"><a class="header" href="#deserialize_coordscoords_bytes--dict"><code>deserialize_coords(coords_bytes) → dict</code></a></h3>
-<p>Deserialize COORDS01 bytes into a Python dictionary with NumPy arrays:</p>
-<pre><code class="language-python">result = molex.deserialize_coords(coords_bytes)
-# result["num_atoms"]: int
-# result["x"], result["y"], result["z"]: np.ndarray[f32]
+<h2 id="core-coords-functions-pythonrs"><a class="header" href="#core-coords-functions-pythonrs">Core COORDS functions (<code>python.rs</code>)</a></h2>
+<p>These operate on serialized COORDS bytes:</p>
+<pre><code class="language-python">import molex
+
+# Parse PDB string to COORDS bytes
+coords_bytes = molex.pdb_to_coords(pdb_string)
+
+# Parse mmCIF string to COORDS bytes
+coords_bytes = molex.mmcif_to_coords(cif_string)
+
+# Convert COORDS bytes to PDB string
+pdb_string = molex.coords_to_pdb(coords_bytes)
+
+# Round-trip validation
+validated = molex.deserialize_coords_py(coords_bytes)
 </code></pre>
-<h2 id="atomworks-adapters"><a class="header" href="#atomworks-adapters">AtomWorks adapters</a></h2>
-<p>For ML model pipelines that use Biotite <code>AtomArray</code> objects:</p>
-<h3 id="entities_to_atom_arrayassembly_bytes--atomarray"><a class="header" href="#entities_to_atom_arrayassembly_bytes--atomarray"><code>entities_to_atom_array(assembly_bytes) → AtomArray</code></a></h3>
-<p>Convert ASSEM01 bytes to a Biotite AtomArray with standard and
-AtomWorks-specific annotations (entity_id, mol_type, chain_type).</p>
-<h3 id="entities_to_atom_array_plusassembly_bytes--atomarray"><a class="header" href="#entities_to_atom_array_plusassembly_bytes--atomarray"><code>entities_to_atom_array_plus(assembly_bytes) → AtomArray</code></a></h3>
-<p>Like <code>entities_to_atom_array</code> but also populates bonds via distance
-inference.</p>
-<h3 id="atom_array_to_entitiesatom_array--bytes"><a class="header" href="#atom_array_to_entitiesatom_array--bytes"><code>atom_array_to_entities(atom_array) → bytes</code></a></h3>
-<p>Convert a Biotite AtomArray back to ASSEM01 bytes.</p>
-<h3 id="entities_to_atom_array_parsedassembly_bytes-filename--atomarray"><a class="header" href="#entities_to_atom_array_parsedassembly_bytes-filename--atomarray"><code>entities_to_atom_array_parsed(assembly_bytes, filename) → AtomArray</code></a></h3>
-<p>Convert via the full AtomWorks cleaning pipeline (leaving group
-removal, charge correction, missing atom imputation).</p>
-<h3 id="parse_file_to_entitiespath--bytes"><a class="header" href="#parse_file_to_entitiespath--bytes"><code>parse_file_to_entities(path) → bytes</code></a></h3>
-<p>Parse a structure file (PDB/mmCIF) directly to ASSEM01 bytes.</p>
-<h3 id="parse_file_fullpath--atomarray"><a class="header" href="#parse_file_fullpath--atomarray"><code>parse_file_full(path) → AtomArray</code></a></h3>
-<p>Parse a structure file through the full AtomWorks pipeline.</p>
-<h3 id="coords_to_atom_arraycoords_bytes--atomarray"><a class="header" href="#coords_to_atom_arraycoords_bytes--atomarray"><code>coords_to_atom_array(coords_bytes) → AtomArray</code></a></h3>
-<p>Convert single-molecule COORDS01 bytes to AtomArray.</p>
-<h3 id="coords_to_atom_array_pluscoords_bytes--atomarray"><a class="header" href="#coords_to_atom_array_pluscoords_bytes--atomarray"><code>coords_to_atom_array_plus(coords_bytes) → AtomArray</code></a></h3>
-<p>Like <code>coords_to_atom_array</code> with bond inference.</p>
-<h3 id="atom_array_to_coordsatom_array--bytes"><a class="header" href="#atom_array_to_coordsatom_array--bytes"><code>atom_array_to_coords(atom_array) → bytes</code></a></h3>
-<p>Convert AtomArray to single-molecule COORDS01 bytes.</p>
+<h2 id="atomworks-interop-adaptersatomworks"><a class="header" href="#atomworks-interop-adaptersatomworks">AtomWorks interop (<code>adapters::atomworks</code>)</a></h2>
+<p>Entity-aware conversions between molex’s ASSEM01 binary format and Biotite <code>AtomArray</code> objects with AtomWorks annotations (<code>entity_id</code>, <code>mol_type</code>, <code>pn_unit_iid</code>, <code>chain_type</code>).</p>
+<h3 id="molex---atomworks"><a class="header" href="#molex---atomworks">molex -&gt; AtomWorks</a></h3>
+<pre><code class="language-python">import molex
+
+# Convert ASSEM01 bytes to AtomArray (basic annotations)
+atom_array = molex.entities_to_atom_array(assembly_bytes)
+
+# Convert with full bond list and chain type annotations
+atom_array = molex.entities_to_atom_array_plus(assembly_bytes)
+
+# Convert with AtomWorks cleaning pipeline (leaving group removal,
+# charge correction, missing atom imputation)
+atom_array = molex.entities_to_atom_array_parsed(assembly_bytes, "3nez.cif.gz")
+</code></pre>
+<h3 id="atomworks---molex"><a class="header" href="#atomworks---molex">AtomWorks -&gt; molex</a></h3>
+<pre><code class="language-python"># Convert AtomArray back to ASSEM01 bytes (preserves entity metadata)
+assembly_bytes = molex.atom_array_to_entities(atom_array)
+</code></pre>
+<h3 id="file-based-shortcuts"><a class="header" href="#file-based-shortcuts">File-based shortcuts</a></h3>
+<pre><code class="language-python"># Parse structure file directly to ASSEM01 bytes via AtomWorks
+assembly_bytes = molex.parse_file_to_entities("3nez.cif.gz")
+
+# Parse to AtomArray with full AtomWorks pipeline
+atom_array = molex.parse_file_full("3nez.cif.gz")
+</code></pre>
+<h3 id="flat-coords-functions"><a class="header" href="#flat-coords-functions">Flat Coords functions</a></h3>
+<p>Flat Coords-based conversions are available for working with the COORDS01 format directly:</p>
+<pre><code class="language-python">atom_array = molex.coords_to_atom_array(coords_bytes)
+atom_array = molex.coords_to_atom_array_plus(coords_bytes)
+assembly_bytes = molex.atom_array_to_coords(atom_array)
+</code></pre>
+<p>These operate on the flat COORDS01 format and do not include entity metadata.</p>
 
                     </main>
 
@@ -846,6 +834,22 @@ removal, charge correction, missing atom imputation).</p>
         <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
         <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
 
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
 
 
         <script>

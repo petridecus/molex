@@ -1,70 +1,92 @@
-# Adapters — Format I/O
+# Adapters
 
-The `adapters` module provides parsers and serializers for common
-molecular structure file formats.
+Format adapters live in `molex::adapters` (source: `src/adapters/`). Each adapter's primary API returns `Vec<MoleculeEntity>`. Coords-based variants are available for FFI/IPC consumers.
 
-## PDB / mmCIF (`adapters::pdb`)
+## PDB (`adapters::pdb`)
 
-The primary entry point for structure files:
+Parses PDB files using the `pdbtbx` crate. Handles non-standard lines (GROMACS/MemProtMD output) via sanitization.
 
 ```rust,ignore
-// Auto-detect format from extension
-let coords = structure_file_to_coords("path/to/file.pdb")?;
+// Primary API
+pdb_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, CoordsError>
+pdb_str_to_entities(pdb_str: &str) -> Result<Vec<MoleculeEntity>, CoordsError>
+structure_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, CoordsError>
 
-// Explicit format
-let bytes = pdb_to_coords(pdb_string)?;      // PDB → COORDS01 bytes
-let bytes = mmcif_to_coords(cif_string)?;     // mmCIF → COORDS01 bytes
-let pdb = coords_to_pdb(&coords_bytes)?;      // COORDS01 → PDB string
+// Derived Coords API
+pdb_file_to_coords(path: &Path) -> Result<Coords, CoordsError>
+pdb_str_to_coords(pdb_str: &str) -> Result<Coords, CoordsError>
+pdb_to_coords(pdb_str: &str) -> Result<Vec<u8>, CoordsError>  // serialized bytes
+
+// Coords -> PDB
+coords_to_pdb(coords_bytes: &[u8]) -> Result<String, CoordsError>
 ```
 
-Backed by the `pdbtbx` crate for robust PDB/mmCIF parsing.
+`structure_file_to_entities` auto-detects PDB vs mmCIF by file extension (`.pdb`/`.ent` -> PDB, everything else -> mmCIF).
+
+## mmCIF (`adapters::cif`)
+
+Custom DOM-based parser (no external crate). Parses CIF text into a DOM, then extracts atom sites via typed extractors.
+
+```rust,ignore
+mmcif_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, CoordsError>
+mmcif_str_to_entities(cif_str: &str) -> Result<Vec<MoleculeEntity>, CoordsError>
+
+mmcif_file_to_coords(path: &Path) -> Result<Coords, CoordsError>
+mmcif_str_to_coords(cif_str: &str) -> Result<Coords, CoordsError>
+```
 
 ## BinaryCIF (`adapters::bcif`)
 
-RCSB's compressed binary CIF format. Handles gzip-compressed files
-automatically.
+Decodes BinaryCIF (MessagePack-encoded CIF) with column-level codecs.
 
 ```rust,ignore
-let bytes = bcif_to_coords(&bcif_bytes)?;
-let bytes = bcif_file_to_coords("path/to/file.bcif")?;
+bcif_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, CoordsError>
+bcif_to_entities(data: &[u8]) -> Result<Vec<MoleculeEntity>, CoordsError>
+
+bcif_file_to_coords(path: &Path) -> Result<Coords, CoordsError>
+bcif_to_coords(data: &[u8]) -> Result<Coords, CoordsError>
 ```
 
-## DCD Trajectories (`adapters::dcd`)
+## MRC/CCP4 density maps (`adapters::mrc`)
 
-CHARMM/NAMD trajectory format — a sequence of coordinate frames
-sharing the same topology.
+Parses MRC/CCP4 format electron density maps into `Density` (which wraps `VoxelGrid`).
 
 ```rust,ignore
-let frames: Vec<DcdFrame> = dcd_file_to_frames("trajectory.dcd")?;
-// Each frame: Vec<f32> positions (x,y,z interleaved)
+mrc_file_to_density(path: &Path) -> Result<Density, DensityError>
+mrc_to_density(data: &[u8]) -> Result<Density, DensityError>
 ```
 
-Also provides streaming via `DcdReader` for large trajectories.
+## DCD trajectories (`adapters::dcd`)
 
-## MRC / CCP4 Density (`adapters::mrc`)
-
-Electron density maps:
+Reads DCD binary trajectory files (CHARMM/NAMD format).
 
 ```rust,ignore
-let density = mrc_to_density(&bytes)?;
-let density = mrc_file_to_density("map.mrc")?;
-// density: DensityMap with 3D grid + cell parameters
+dcd_file_to_frames(path: &Path) -> Result<Vec<DcdFrame>, CoordsError>
+
+pub struct DcdHeader { /* timestep, n_atoms, etc. */ }
+pub struct DcdFrame { pub x: Vec<f32>, pub y: Vec<f32>, pub z: Vec<f32> }
+pub struct DcdReader<R> { /* streaming reader */ }
 ```
 
-## AtomWorks (`adapters::atomworks`)
+## AtomWorks (`adapters::atomworks`, feature = `python`)
 
-Bidirectional conversion between molex entities and Biotite
-`AtomArray` objects (via PyO3). Used by ML model pipelines
-(RF3, RFdiffusion3, LigandMPNN).
+Bidirectional conversion between molex entities and Biotite `AtomArray` objects with AtomWorks annotations. Requires the `python` feature.
 
-```python
-import molex
+Entity-aware functions (preserve molecule type, entity ID, chain grouping):
 
-# molex → AtomArray (for model inference)
-atom_array = molex.entities_to_atom_array(assembly_bytes)
-
-# AtomArray → molex (after prediction)
-assembly_bytes = molex.atom_array_to_entities(atom_array)
+```rust,ignore
+entities_to_atom_array(assembly_bytes: Vec<u8>) -> PyResult<PyObject>
+entities_to_atom_array_plus(assembly_bytes: Vec<u8>) -> PyResult<PyObject>
+atom_array_to_entities(atom_array: PyObject) -> PyResult<Vec<u8>>
+entities_to_atom_array_parsed(assembly_bytes: Vec<u8>, filename: &str) -> PyResult<PyObject>
+parse_file_to_entities(path: &str) -> PyResult<Vec<u8>>
+parse_file_full(path: &str) -> PyResult<PyObject>
 ```
 
-Feature-gated behind `python`.
+Flat Coords functions:
+
+```rust,ignore
+coords_to_atom_array(py: Python, coords_bytes: Vec<u8>) -> PyResult<PyObject>
+coords_to_atom_array_plus(py: Python, coords_bytes: Vec<u8>) -> PyResult<PyObject>
+atom_array_to_coords(atom_array: PyObject) -> PyResult<Vec<u8>>
+```

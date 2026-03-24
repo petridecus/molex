@@ -8,10 +8,11 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use super::{chain_type_id_to_molecule_type, mol_type_str_to_molecule_type};
-use crate::types::coords::{
-    serialize_assembly, ChainIdMapper, Coords, CoordsAtom, Element,
+use crate::element::Element;
+use crate::entity::molecule::{MoleculeEntity, MoleculeType};
+use crate::ops::codec::{
+    serialize_assembly, ChainIdMapper, Coords, CoordsAtom,
 };
-use crate::types::entity::{MoleculeEntity, MoleculeType};
 
 /// Determine per-atom entity ID assignments from annotations on the atom array.
 fn determine_entity_ids(
@@ -100,17 +101,18 @@ fn build_entity_from_indices(
         atom_names: entity_atom_names,
         elements: elems,
     };
-    let kind = crate::types::entity::coords_to_entity_kind(mol_type, &coords);
 
-    // output_idx is bounded by entity count which fits in u32
-    #[allow(clippy::cast_possible_truncation)]
-    let entity_id = output_idx as u32;
+    let mut allocator = crate::entity::molecule::id::EntityIdAllocator::new();
+    // Advance allocator to the output index so IDs are sequential across
+    // entities.
+    for _ in 0..output_idx {
+        let _ = allocator.allocate();
+    }
+    let id = allocator.allocate();
 
-    Ok(MoleculeEntity {
-        entity_id,
-        molecule_type: mol_type,
-        kind,
-    })
+    Ok(crate::ops::codec::coords_to_molecule_entity(
+        id, mol_type, &coords,
+    ))
 }
 
 /// Extract a single `CoordsAtom` from array index `i`.
@@ -290,7 +292,7 @@ fn determine_mol_type(
         Ok(mol_type_str_to_molecule_type(&mt_str))
     } else {
         let rn: String = res_name_arr.get_item(first_idx)?.extract()?;
-        Ok(crate::types::entity::classify_residue(&rn))
+        Ok(crate::entity::molecule::classify::classify_residue(&rn))
     }
 }
 
@@ -346,12 +348,12 @@ pub fn atom_array_to_coords(
     atom_array: Py<PyAny>,
 ) -> PyResult<Vec<u8>> {
     let assembly_bytes = atom_array_to_entities(py, atom_array)?;
-    let entities = crate::types::coords::deserialize_assembly(&assembly_bytes)
+    let entities = crate::ops::codec::deserialize_assembly(&assembly_bytes)
         .map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
         })?;
-    let coords = crate::types::entity::merge_entities(&entities);
-    crate::types::coords::serialize(&coords).map_err(|e| {
+    let coords = crate::ops::codec::merge_entities(&entities);
+    crate::ops::codec::serialize(&coords).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })
 }
@@ -370,7 +372,7 @@ pub fn atom_array_to_entity_vec(
 ) -> PyResult<Vec<MoleculeEntity>> {
     let atom_array_py: Py<PyAny> = atom_array.clone().unbind();
     let bytes = atom_array_to_entities(py, atom_array_py)?;
-    crate::types::coords::deserialize_assembly(&bytes).map_err(|e| {
+    crate::ops::codec::deserialize_assembly(&bytes).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })
 }

@@ -156,8 +156,8 @@ pub unsafe extern "C" fn coords_from_coords(
         return CoordsResult::error("Coords data is null");
     }
     let coords_slice = std::slice::from_raw_parts(coords_ptr, coords_len);
-    match crate::types::coords::deserialize(coords_slice)
-        .and_then(|coords| crate::types::coords::serialize(&coords))
+    match crate::ops::codec::deserialize(coords_slice)
+        .and_then(|coords| crate::ops::codec::serialize(&coords))
     {
         Ok(coords_bytes) => CoordsResult::success(coords_bytes),
         Err(e) => CoordsResult::error(&e.to_string()),

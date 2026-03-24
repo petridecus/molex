@@ -6,27 +6,37 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-molex = { git = "https://github.com/petridecus/molex" }
+molex = "0.1"
+```
+
+To enable Python bindings (PyO3 + NumPy + AtomWorks interop):
+
+```toml
+[dependencies]
+molex = { version = "0.1", features = ["python"] }
 ```
 
 ## As a Python package
 
-molex provides optional Python bindings via PyO3/maturin.
-
 ```bash
-# Build and install the wheel
 cd crates/molex
 maturin develop --release --features python
 
-# Verify
 python -c "import molex; print('OK')"
 ```
 
-## Feature flags
+## Dependencies
 
-| Feature  | Description |
-|----------|-------------|
-| `python` | Enable PyO3 bindings (requires `pyo3`, `numpy`) |
+molex pulls in:
 
-The default build includes no optional features — it's a pure Rust
-library with no native dependencies beyond `glam` and `pdbtbx`.
+- **glam** -- 3D math (`Vec3`, `Mat4`)
+- **pdbtbx** -- PDB format parsing
+- **ndarray** -- 3D arrays for density grids
+- **rmp** -- MessagePack for BinaryCIF decoding
+- **flate2** -- gzip decompression
+- **thiserror** -- error types
+
+With the `python` feature:
+
+- **pyo3** -- Python FFI
+- **numpy** -- NumPy array interop

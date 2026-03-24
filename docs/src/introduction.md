@@ -1,51 +1,25 @@
 # molex
 
-**molex** is a Rust library for parsing, transforming, and serializing
-molecular structure data. It provides a unified type system for working
-with proteins, nucleic acids, ligands, and other biomolecules across
-multiple file formats.
+**molex** (molecular exchange) is a Rust library for parsing, analyzing, transforming, and serializing molecular structure data. It supports PDB, mmCIF, BinaryCIF, MRC/CCP4 density maps, and DCD trajectories.
 
-## What it does
+## Key concepts
 
-- **Parse** PDB, mmCIF, BinaryCIF, DCD trajectory, and MRC density files
-- **Convert** between formats with a canonical intermediate representation
-- **Transform** coordinates: alignment, superposition, filtering, interpolation
-- **Analyze** secondary structure (DSSP), bond inference, validation
-- **Extract** render-ready data (backbone chains, sidechain atoms, bonds)
-- **Serialize** to a compact binary format for IPC and storage
+- **`MoleculeEntity`** represents a single molecule: a protein chain, a DNA/RNA strand, a ligand, an ion, or a group of waters. Parsing a structure file produces a `Vec<MoleculeEntity>`.
 
-## Key types
+- **`Atom`** holds a position, element, atom name, occupancy, and B-factor. Residue and chain context live on the entity that contains the atom.
 
-| Type | Description |
-|------|-------------|
-| `Coords` | Flat atom arrays: positions, names, chains, residues, elements |
-| `MoleculeEntity` | A classified molecule (protein, ligand, etc.) with its `Coords` |
-| `RenderCoords` | Backbone chains + sidechain atoms, ready for GPU consumption |
-| `SSType` | Secondary structure classification (helix, sheet, coil, turn) |
-| `DensityMap` | 3D electron density grid from MRC/CCP4 files |
+- **`Coords`** is a binary serialization format used for FFI and IPC (e.g. iceoryx zero-copy between processes).
 
-## Design principles
+- **Analysis** includes covalent bond inference, DSSP hydrogen bond detection, disulfide bridges, and secondary structure classification.
 
-1. **Zero-copy where possible.** Parsing produces owned data, but
-   transforms operate on slices and iterators.
-2. **Format-agnostic core.** `Coords` and `MoleculeEntity` carry no
-   format-specific metadata — adapters handle the translation.
-3. **Embeddable.** No filesystem, network, or GPU dependencies in the
-   core. Optional `python` feature adds PyO3 bindings.
+- **`VoxelGrid`** and **`Density`** represent 3D volumetric data (electron density, cryo-EM maps).
 
-## Crate structure
+## Crate features
 
-```
-molex/
-├── types/              Core data structures (Coords, Entity, Density)
-├── adapters/           Format I/O (PDB, mmCIF, BinaryCIF, DCD, MRC, AtomWorks)
-├── cif/                CIF/STAR parser and typed extractors
-├── ops/                Coordinate transforms, validation, bond inference
-├── render/             Render-ready data extraction
-├── secondary_structure/ DSSP and SS type classification
-├── ffi/                C-compatible FFI layer
-└── python/             PyO3 bindings (feature-gated)
-```
+| Feature  | Description |
+|----------|-------------|
+| `default` | Core Rust library (no Python) |
+| `python` | PyO3 bindings + AtomWorks interop |
 
 ## API documentation
 

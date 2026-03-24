@@ -3,8 +3,9 @@
 use glam::{Mat3, Vec3};
 
 use super::extract::{centroid, extract_ca_positions};
-use crate::types::coords::{
-    deserialize, deserialize_assembly, serialize, serialize_assembly, Coords,
+use crate::entity::molecule::MoleculeEntity;
+use crate::ops::codec::{
+    deserialize, deserialize_assembly, serialize, serialize_assembly,
     CoordsError, ASSEMBLY_MAGIC,
 };
 
@@ -140,52 +141,48 @@ pub fn kabsch_alignment_with_scale(
     Some((rotation, translation, scale))
 }
 
-/// Apply transformation to all atoms in COORDS.
-pub fn transform_coords(
-    coords: &mut Coords,
+/// Apply rotation + translation to all atoms in a set of entities.
+pub fn transform_entities(
+    entities: &mut [MoleculeEntity],
     rotation: Mat3,
     translation: Vec3,
 ) {
-    for atom in &mut coords.atoms {
-        let pos = Vec3::new(atom.x, atom.y, atom.z);
-        let transformed = rotation * pos + translation;
-        atom.x = transformed.x;
-        atom.y = transformed.y;
-        atom.z = transformed.z;
+    for entity in entities.iter_mut() {
+        for atom in entity.atom_set_mut() {
+            atom.position = rotation * atom.position + translation;
+        }
     }
 }
 
-/// Apply transformation with scale to all atoms in COORDS.
-pub fn transform_coords_with_scale(
-    coords: &mut Coords,
+/// Apply rotation + translation + scale to all atoms in a set of entities.
+pub fn transform_entities_with_scale(
+    entities: &mut [MoleculeEntity],
     rotation: Mat3,
     translation: Vec3,
     scale: f32,
 ) {
-    for atom in &mut coords.atoms {
-        let pos = Vec3::new(atom.x, atom.y, atom.z);
-        let transformed = rotation * (pos * scale) + translation;
-        atom.x = transformed.x;
-        atom.y = transformed.y;
-        atom.z = transformed.z;
+    for entity in entities.iter_mut() {
+        for atom in entity.atom_set_mut() {
+            atom.position = rotation * (atom.position * scale) + translation;
+        }
     }
 }
 
-/// Align COORDS to match reference CA positions using Kabsch algorithm.
+/// Align entities to match reference CA positions using Kabsch algorithm.
 ///
 /// # Errors
 ///
 /// Returns `CoordsError::InvalidFormat` if CA count differs between reference
-/// and coords, or if the Kabsch alignment fails.
+/// and entities, or if the Kabsch alignment fails.
 pub fn align_to_reference(
-    coords: &mut Coords,
+    entities: &mut [MoleculeEntity],
     reference_ca: &[Vec3],
 ) -> Result<(), CoordsError> {
-    let predicted_ca = extract_ca_positions(coords);
+    let predicted_ca = extract_ca_positions(entities);
 
     if predicted_ca.len() != reference_ca.len() {
         return Err(CoordsError::InvalidFormat(format!(
-            "CA count mismatch: reference={}, coords={}",
+            "CA count mismatch: reference={}, entities={}",
             reference_ca.len(),
             predicted_ca.len()
         )));
@@ -196,13 +193,13 @@ pub fn align_to_reference(
             CoordsError::InvalidFormat("Kabsch alignment failed".to_owned())
         })?;
 
-    transform_coords(coords, rotation, translation);
+    transform_entities(entities, rotation, translation);
     Ok(())
 }
 
 /// Align coordinate bytes to match reference CA positions.
 ///
-/// Supports both COORDS and ASSEM01 formats -- detects automatically.
+/// Supports both COORDS and ASSEM01 formats — detects automatically.
 /// Returns new aligned bytes in the same format as the input.
 ///
 /// # Errors
@@ -214,51 +211,17 @@ pub fn align_coords_bytes(
     reference_ca: &[Vec3],
 ) -> Result<Vec<u8>, CoordsError> {
     if coords_bytes.len() >= 8 && &coords_bytes[0..8] == ASSEMBLY_MAGIC {
-        align_assembly_bytes(coords_bytes, reference_ca)
+        let mut entities = deserialize_assembly(coords_bytes)?;
+        align_to_reference(&mut entities, reference_ca)?;
+        serialize_assembly(&entities)
     } else {
-        let mut coords = deserialize(coords_bytes)?;
-        align_to_reference(&mut coords, reference_ca)?;
-        serialize(&coords)
+        // Plain COORDS path: deserialize, align via entity bridge, reserialize
+        let coords = deserialize(coords_bytes)?;
+        let mut entities = crate::ops::codec::split_into_entities(&coords);
+        align_to_reference(&mut entities, reference_ca)?;
+        let aligned = crate::ops::codec::merge_entities(&entities);
+        serialize(&aligned)
     }
-}
-
-/// Align ASSEM01 bytes to match reference CA positions.
-/// Merges entities to extract CA, computes Kabsch, applies to each entity,
-/// then re-serializes as ASSEM01.
-fn align_assembly_bytes(
-    coords_bytes: &[u8],
-    reference_ca: &[Vec3],
-) -> Result<Vec<u8>, CoordsError> {
-    let mut entities = deserialize_assembly(coords_bytes)?;
-
-    // Merge all entities into flat coords to extract CA positions
-    let merged = crate::types::entity::merge_entities(&entities);
-    let predicted_ca = extract_ca_positions(&merged);
-
-    if predicted_ca.len() != reference_ca.len() {
-        return Err(CoordsError::InvalidFormat(format!(
-            "CA count mismatch: reference={}, assembly={}",
-            reference_ca.len(),
-            predicted_ca.len()
-        )));
-    }
-
-    let (rotation, translation) = kabsch_alignment(reference_ca, &predicted_ca)
-        .ok_or_else(|| {
-            CoordsError::InvalidFormat("Kabsch alignment failed".to_owned())
-        })?;
-
-    // Apply same transform to every entity
-    for entity in &mut entities {
-        let mut coords = entity.to_coords();
-        transform_coords(&mut coords, rotation, translation);
-        entity.kind = crate::types::entity::coords_to_entity_kind(
-            entity.molecule_type,
-            &coords,
-        );
-    }
-
-    serialize_assembly(&entities)
 }
 
 // ============================================================================
@@ -281,7 +244,6 @@ fn svd_3x3(a: [[f32; 3]; 3]) -> ([[f32; 3]; 3], [f32; 3], [[f32; 3]; 3]) {
     (u, s, v)
 }
 
-/// Compute A^T * A for a 3x3 matrix.
 fn compute_ata(a: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     let mut ata = [[0.0f32; 3]; 3];
     for i in 0..3 {
@@ -294,7 +256,6 @@ fn compute_ata(a: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     ata
 }
 
-/// Compute U = A * V * S^{-1} for the SVD.
 fn compute_u_from_av(
     a: [[f32; 3]; 3],
     v: &[[f32; 3]; 3],
@@ -335,7 +296,6 @@ fn jacobi_eigendecomposition(
     sort_eigenpairs(a, v)
 }
 
-/// Find the largest off-diagonal element. Returns `None` if below threshold.
 fn find_max_off_diagonal(a: &[[f32; 3]; 3]) -> Option<(usize, usize)> {
     let mut max_val = 0.0f32;
     let mut p = 0;
@@ -352,7 +312,6 @@ fn find_max_off_diagonal(a: &[[f32; 3]; 3]) -> Option<(usize, usize)> {
     (max_val >= 1e-10).then_some((p, q))
 }
 
-/// Apply a single Jacobi rotation to zero out element (p, q).
 #[allow(clippy::many_single_char_names)]
 fn apply_jacobi_rotation(
     a: &mut [[f32; 3]; 3],
@@ -398,7 +357,6 @@ fn apply_jacobi_rotation(
     }
 }
 
-/// Sort eigenvalues (descending) and reorder eigenvectors to match.
 fn sort_eigenpairs(
     a: [[f32; 3]; 3],
     v: [[f32; 3]; 3],
