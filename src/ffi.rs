@@ -163,18 +163,3 @@ pub unsafe extern "C" fn coords_from_coords(
         Err(e) => CoordsResult::error(&e.to_string()),
     }
 }
-
-/// Build COORDS from backbone positions (not yet implemented).
-#[no_mangle]
-pub extern "C" fn coords_from_backbone(
-    positions: *const f32,
-    _num_res: usize,
-    _sequence: *const c_char,
-    _chain_breaks: *const i32,
-    _chain_break_count: usize,
-) -> CoordsResult {
-    if positions.is_null() {
-        return CoordsResult::error("Null pointer provided");
-    }
-    CoordsResult::error("Not implemented: use model-specific adapters")
-}

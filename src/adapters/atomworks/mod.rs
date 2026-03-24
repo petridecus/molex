@@ -3,13 +3,11 @@
 //! Bidirectional conversion between molex's `Vec<MoleculeEntity>` and
 //! AtomWorks-annotated Biotite `AtomArray` objects.
 //!
-//! Unlike the plain biotite adapter (which converts flat `Coords` bytes and
-//! produces an empty `BondList`), this adapter:
+//! This adapter:
 //!
 //! - Operates on **entities**, preserving molecule type, entity ID, and chain
 //!   grouping through the round-trip.
-//! - Populates **bonds** from `MoleculeEntity.bonds` (when the planned bond
-//!   topology refactor lands) or from distance inference as a fallback.
+//! - Populates **bonds** from distance inference.
 //! - Sets AtomWorks-specific per-atom annotations (`entity_id`, `mol_type`,
 //!   `pn_unit_iid`) so structures can feed directly into Foundry model
 //!   pipelines (RF3, RFdiffusion3, LigandMPNN) without re-parsing.

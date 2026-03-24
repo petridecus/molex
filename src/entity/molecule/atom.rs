@@ -1,4 +1,4 @@
-//! Core atom type — position and chemistry, no polymer/residue context.
+//! Core atom type — position and chemistry.
 
 use glam::Vec3;
 
@@ -6,9 +6,7 @@ use crate::element::Element;
 
 /// A single atom with position, chemistry, and crystallographic data.
 ///
-/// This is the universal atom representation. Polymer context (residue
-/// name, residue number, chain ID) lives on the residue/entity that
-/// contains the atom, not on the atom itself.
+/// Residue and chain context lives on the entity that contains the atom.
 #[derive(Debug, Clone)]
 pub struct Atom {
     /// 3D position in angstroms.

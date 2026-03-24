@@ -86,12 +86,13 @@ impl NAEntity {
     ) -> Self {
         let (atoms, residues) =
             super::extract_atom_set_and_residues(indices, coords);
+        let segment_breaks = compute_na_segment_breaks(&atoms, &residues);
         Self {
             id,
             na_type,
             atoms,
             residues,
-            segment_breaks: Vec::new(), // TODO: compute from P-P distances
+            segment_breaks,
             pdb_chain_id,
         }
     }
@@ -104,7 +105,7 @@ impl NAEntity {
         reason = "gap-splitting logic is inherently nested"
     )]
     pub fn extract_p_atom_segments(&self) -> Vec<Vec<Vec3>> {
-        const MAX_PP_DIST_SQ: f32 = 8.0 * 8.0;
+        const MAX_PHOSPHATE_BOND_DIST_SQ: f32 = 8.0 * 8.0;
 
         let mut p_positions = Vec::new();
         for residue in &self.residues {
@@ -124,7 +125,7 @@ impl NAEntity {
         let mut segment = Vec::new();
         for pos in p_positions {
             if let Some(&prev) = segment.last() {
-                if pos.distance_squared(prev) > MAX_PP_DIST_SQ {
+                if pos.distance_squared(prev) > MAX_PHOSPHATE_BOND_DIST_SQ {
                     if segment.len() >= 2 {
                         result.push(std::mem::take(&mut segment));
                     } else {
@@ -201,6 +202,39 @@ impl NAEntity {
 
         rings
     }
+}
+
+/// Maximum P→P distance (Å) for consecutive nucleotides. Gaps exceeding
+/// this indicate a backbone break.
+const MAX_PHOSPHATE_BOND_DIST: f32 = 8.0;
+
+/// Compute segment break indices from P(i)→P(i+1) distances.
+fn compute_na_segment_breaks(
+    atoms: &[Atom],
+    residues: &[Residue],
+) -> Vec<usize> {
+    let mut breaks = Vec::new();
+    let find_p = |r: &Residue| -> Option<Vec3> {
+        for idx in r.atom_range.clone() {
+            let name =
+                std::str::from_utf8(&atoms[idx].name).unwrap_or("").trim();
+            if name == "P" {
+                return Some(atoms[idx].position);
+            }
+        }
+        None
+    };
+    for i in 1..residues.len() {
+        match (find_p(&residues[i - 1]), find_p(&residues[i])) {
+            (Some(prev), Some(curr)) => {
+                if prev.distance(curr) > MAX_PHOSPHATE_BOND_DIST {
+                    breaks.push(i);
+                }
+            }
+            _ => breaks.push(i),
+        }
+    }
+    breaks
 }
 
 impl Polymer for NAEntity {

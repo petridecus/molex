@@ -358,10 +358,10 @@ pub fn atom_array_to_coords(
     })
 }
 
-/// Convert an AtomArray to `Vec<MoleculeEntity>` (Rust structs, not bytes).
+/// Convert an AtomArray to `Vec<MoleculeEntity>` (Rust structs).
 ///
-/// For use within the runner when you need Rust-side entity objects directly
-/// rather than going through ASSEM01 serialization.
+/// Returns entity objects directly, useful when you need Rust-side
+/// access without a serialization round-trip.
 ///
 /// # Errors
 ///
