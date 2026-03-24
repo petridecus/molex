@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "molex"
-version = "0.1.1"
+version = "0.2.0"
 description = "Coordinate format adapters for molecular structure models"
 requires-python = ">=3.8"
 license = { text = "MIT" }
