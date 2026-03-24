@@ -88,6 +88,25 @@ pub fn merge_short_segments(ss_types: &[SSType]) -> Vec<SSType> {
     result
 }
 
+/// Detect **backbone-only** hydrogen bonds across all protein entities
+/// using the Kabsch-Sander energy criterion.
+///
+/// This is the DSSP H-bond detection — only considers backbone N-H and
+/// C=O groups. For general H-bond detection (sidechain, ligand, nucleic
+/// acid, water), use [`bonds::detect_all_hbonds`] instead.
+#[must_use]
+pub fn detect_backbone_hbonds_for_entities(
+    entities: &[crate::entity::molecule::MoleculeEntity],
+) -> Vec<HBond> {
+    use crate::entity::molecule::protein::ProteinEntity;
+    let backbone: Vec<ResidueBackbone> = entities
+        .iter()
+        .filter_map(crate::entity::molecule::MoleculeEntity::as_protein)
+        .flat_map(ProteinEntity::to_backbone)
+        .collect();
+    detect_hbonds(&backbone)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::float_cmp)]
 mod tests {
