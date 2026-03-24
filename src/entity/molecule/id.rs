@@ -18,6 +18,14 @@ impl EntityId {
     }
 }
 
+impl std::ops::Deref for EntityId {
+    type Target = u32;
+
+    fn deref(&self) -> &u32 {
+        &self.0
+    }
+}
+
 impl std::fmt::Display for EntityId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)

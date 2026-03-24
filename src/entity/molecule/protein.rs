@@ -192,6 +192,38 @@ impl ProteinEntity {
             .collect()
     }
 
+    /// Derive per-residue sidechains (atoms, bonds, hydrophobicity).
+    ///
+    /// Returns one [`Sidechain`] per residue that has backbone atoms (same
+    /// residues as [`to_backbone()`](Self::to_backbone)). Glycine residues
+    /// produce an empty `Sidechain`. Residues missing backbone atoms are
+    /// skipped.
+    #[must_use]
+    pub fn to_sidechains<F, G>(
+        &self,
+        is_hydrophobic: F,
+        get_bonds: G,
+    ) -> Vec<Sidechain>
+    where
+        F: Fn(&str) -> bool,
+        G: Fn(&str) -> Option<Vec<(&'static str, &'static str)>>,
+    {
+        self.residues
+            .iter()
+            .filter_map(|r| {
+                // Skip residues without complete backbone (same filter as
+                // to_backbone / to_protein_residues).
+                let _bb = extract_backbone_from_residue(&self.atoms, r)?;
+                Some(extract_sidechain_from_residue(
+                    &self.atoms,
+                    r,
+                    &is_hydrophobic,
+                    &get_bonds,
+                ))
+            })
+            .collect()
+    }
+
     /// N/CA/C interleaved positions per segment (for spline renderer).
     ///
     /// Each inner `Vec<Vec3>` is one continuous segment with atoms
@@ -215,6 +247,26 @@ impl ProteinEntity {
                 positions
             })
             .collect()
+    }
+
+    /// Classify secondary structure (DSSP) for each residue.
+    ///
+    /// Runs DSSP on the full backbone (all residues in the entity),
+    /// then merges short segments. Segment breaks are handled naturally
+    /// by the H-bond energy calculation — missing residues simply don't
+    /// form bonds. Returns one [`SSType`](crate::SSType) per residue
+    /// that has a complete backbone (same count as
+    /// [`to_backbone()`](Self::to_backbone)).
+    #[must_use]
+    pub fn detect_ss(&self) -> Vec<crate::SSType> {
+        use crate::analysis::{detect_dssp, merge_short_segments};
+
+        let backbone = self.to_backbone();
+        if backbone.is_empty() {
+            return Vec::new();
+        }
+        let (ss, _) = detect_dssp(&backbone);
+        merge_short_segments(&ss)
     }
 }
 
@@ -636,6 +688,80 @@ mod tests {
         assert_eq!(segments.len(), 1);
         // 2 residues * 3 backbone atoms (N, CA, C) = 6
         assert_eq!(segments[0].len(), 6);
+    }
+
+    // -- to_sidechains tests --
+
+    #[test]
+    fn to_sidechains_per_residue() {
+        // ALA(+CB) then GLY: 2 residues, first has sidechain, second empty
+        let coords = make_residue_coords(&[
+            ("ALA", &["N", "CA", "C", "O", "CB"]),
+            ("GLY", &["N", "CA", "C", "O"]),
+        ]);
+        let entities = split_into_entities(&coords);
+        let protein = entities[0].as_protein().unwrap();
+        let sc = protein.to_sidechains(|_| false, |_| None);
+        assert_eq!(sc.len(), 2);
+        assert_eq!(sc[0].atoms.len(), 1); // CB
+        assert!(sc[1].is_empty()); // GLY
+    }
+
+    #[test]
+    fn to_sidechains_bonds_local() {
+        // VAL with CB, CG1, CG2 — bonds should use local indices
+        let coords = make_residue_coords(&[(
+            "VAL",
+            &["N", "CA", "C", "O", "CB", "CG1", "CG2"],
+        )]);
+        let entities = split_into_entities(&coords);
+        let protein = entities[0].as_protein().unwrap();
+        let sc = protein.to_sidechains(
+            |_| false,
+            |name| match name {
+                "VAL" => Some(vec![("CB", "CG1"), ("CB", "CG2")]),
+                _ => None,
+            },
+        );
+        assert_eq!(sc.len(), 1);
+        assert_eq!(sc[0].atoms.len(), 3);
+        assert_eq!(sc[0].bonds.len(), 2);
+        for &(a, b) in &sc[0].bonds {
+            assert!(a < 3 && b < 3);
+        }
+    }
+
+    /// Build Coords for one or more residues from (name, atom_names) pairs.
+    fn make_residue_coords(residues: &[(&str, &[&str])]) -> Coords {
+        let mut atoms = Vec::new();
+        let mut chain_ids = Vec::new();
+        let mut res_names_v = Vec::new();
+        let mut res_nums = Vec::new();
+        let mut atom_names_v = Vec::new();
+        let mut elements = Vec::new();
+        let mut x = 0.0f32;
+        let mut res_num: i32 = 1;
+        for (rname, anames) in residues {
+            for aname in *anames {
+                atoms.push(make_atom(x, 0.0, 0.0));
+                chain_ids.push(b'A');
+                res_names_v.push(res_name(rname));
+                res_nums.push(res_num);
+                atom_names_v.push(atom_name(aname));
+                elements.push(Element::Unknown);
+                x += 1.5;
+            }
+            res_num += 1;
+        }
+        Coords {
+            num_atoms: atoms.len(),
+            atoms,
+            chain_ids,
+            res_names: res_names_v,
+            res_nums,
+            atom_names: atom_names_v,
+            elements,
+        }
     }
 
     // -- is_hydrogen helper --

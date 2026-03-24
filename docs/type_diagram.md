@@ -115,7 +115,7 @@ These are the primary extraction types from protein entities.
 
 ```
 to_backbone()    → Vec<ResidueBackbone>     (just backbone from each residue)
-to_sidechains()  → (not yet implemented)
+to_sidechains()  → Vec<Sidechain>        (sidechain from each residue)
 to_coords()      → Coords                  (SoA flat format for serialization)
 ```
 

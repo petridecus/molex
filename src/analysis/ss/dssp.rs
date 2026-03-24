@@ -1,22 +1,49 @@
 //! DSSP secondary structure classification from hydrogen bond pairs.
 //!
 //! Takes H-bond pairs (from [`crate::analysis::bonds::hydrogen`]) and
-//! classifies residues into Helix, Sheet, or Coil using DSSP pattern
-//! matching rules.
+//! classifies residues into Helix, Sheet, or Coil using the Kabsch &
+//! Sander (1983) algorithm.
+//!
+//! ## Algorithm overview
+//!
+//! 1. **Helix detection**: An n-turn at residue i exists when `has_hbond(i+n,
+//!    i)`. A minimal n-helix requires 2 consecutive n-turns. Priority: alpha
+//!    (n=4) > 3_10 (n=3) > pi (n=5).
+//! 2. **Bridge detection**: Parallel and antiparallel beta-bridges between
+//!    residue pairs.
+//! 3. **Ladder construction**: Consecutive bridges of the same type form
+//!    ladders. All residues in a ladder are marked Sheet.
+//! 4. **Priority**: Helix > Sheet.
 
 use crate::analysis::bonds::hydrogen::HBond;
 use crate::analysis::SSType;
 
+/// Bridge type for beta-sheet detection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BridgeType {
+    /// Parallel beta-bridge.
+    Parallel,
+    /// Antiparallel beta-bridge.
+    Antiparallel,
+}
+
+/// A single beta-bridge between two residues.
+#[derive(Debug, Clone, Copy)]
+struct Bridge {
+    /// First residue index (always < j).
+    i: usize,
+    /// Second residue index.
+    j: usize,
+    /// Type of bridge.
+    kind: BridgeType,
+}
+
 /// Classify secondary structure from H-bond pairs.
 ///
-/// Detects helices (α i→i+4, 3₁₀ i→i+3, π i→i+5 turn patterns) and
-/// sheets (parallel/antiparallel bridge patterns) using standard DSSP
-/// rules.
+/// Detects helices (alpha i->i+4, 3_10 i->i+3, pi i->i+5 turn patterns)
+/// and sheets (parallel/antiparallel bridge patterns with ladder
+/// extension) using the Kabsch & Sander 1983 DSSP algorithm.
 #[must_use]
-#[allow(
-    clippy::too_many_lines,
-    reason = "DSSP helix + sheet detection is inherently sequential"
-)]
 pub fn classify(hbonds: &[HBond], n_residues: usize) -> Vec<SSType> {
     if n_residues < 2 {
         return vec![SSType::Coil; n_residues];
@@ -28,73 +55,552 @@ pub fn classify(hbonds: &[HBond], n_residues: usize) -> Vec<SSType> {
             .any(|h| h.donor == donor && h.acceptor == acceptor)
     };
 
-    let mut raw_ss = vec![SSType::Coil; n_residues];
+    let mut ss = vec![SSType::Coil; n_residues];
 
-    // Detect helices: n-turn at residue i means H-bond from i+n to i.
-    for turn_size in [4usize, 3, 5] {
-        let mut consecutive_turns = 0usize;
-        let min_consecutive = if turn_size == 4 { 4 } else { 3 };
+    // Helix detection in priority order: alpha (n=4) > 3_10 (n=3) > pi (n=5).
+    for &turn_size in &[4usize, 3, 5] {
+        detect_helices(&mut ss, n_residues, turn_size, &has_hbond);
+    }
 
-        for i in 0..n_residues {
-            if !(i + turn_size < n_residues && has_hbond(i + turn_size, i)) {
-                consecutive_turns = 0;
-                continue;
-            }
+    // Bridge detection and ladder/strand marking.
+    let bridges = detect_bridges(n_residues, &has_hbond);
+    let sheet_residues = build_ladders_and_mark(&bridges, n_residues);
 
-            consecutive_turns += 1;
-            if consecutive_turns < min_consecutive {
-                continue;
-            }
-
-            let start = if consecutive_turns == min_consecutive {
-                i + 1 - (min_consecutive - 1)
-            } else {
-                i
-            };
-            for ss_entry in raw_ss
-                .iter_mut()
-                .take(n_residues)
-                .skip(start)
-                .take(i + turn_size + 1 - start)
-            {
-                *ss_entry = SSType::Helix;
-            }
+    // Apply sheet assignments (helix takes priority).
+    for (s, &is_sheet) in ss.iter_mut().zip(sheet_residues.iter()) {
+        if is_sheet && *s != SSType::Helix {
+            *s = SSType::Sheet;
         }
     }
 
-    // Detect sheets: bridge patterns between non-adjacent residues.
-    for i in 1..n_residues.saturating_sub(1) {
-        if raw_ss[i] == SSType::Helix {
-            continue;
+    ss
+}
+
+/// Detect helices of a given turn size and mark residues.
+///
+/// An n-turn at residue i exists when `has_hbond(i+n, i)`. A minimal
+/// n-helix requires 2 consecutive n-turns at i and i+1, marking
+/// residues i+1 through i+n as Helix. Only assigns to residues that
+/// are still Coil (preserving higher-priority helix assignments).
+fn detect_helices(
+    ss: &mut [SSType],
+    n_residues: usize,
+    turn_size: usize,
+    has_hbond: &dyn Fn(usize, usize) -> bool,
+) {
+    let mut turns = vec![false; n_residues];
+    for (i, turn) in turns
+        .iter_mut()
+        .enumerate()
+        .take(n_residues.saturating_sub(turn_size))
+    {
+        if has_hbond(i + turn_size, i) {
+            *turn = true;
         }
-        for j in (i + 2)..n_residues {
-            if raw_ss[j] == SSType::Helix {
-                continue;
+    }
+
+    // Find runs of consecutive turns. A run of length >= 2 forms a helix.
+    let mut run_start: Option<usize> = None;
+
+    for (i, &is_turn) in turns.iter().enumerate() {
+        if is_turn {
+            if run_start.is_none() {
+                run_start = Some(i);
             }
+        } else {
+            if let Some(start) = run_start {
+                mark_helix_run(ss, start, i - 1, turn_size, n_residues);
+            }
+            run_start = None;
+        }
+    }
 
+    // Handle run extending to end of chain.
+    if let Some(start) = run_start {
+        let last_turn = find_last_turn(&turns, start);
+        mark_helix_run(ss, start, last_turn, turn_size, n_residues);
+    }
+}
+
+/// Find the last consecutive true entry starting from `start`.
+fn find_last_turn(turns: &[bool], start: usize) -> usize {
+    let mut last = start;
+    for (i, &t) in turns.iter().enumerate().skip(start) {
+        if t {
+            last = i;
+        } else {
+            break;
+        }
+    }
+    last
+}
+
+/// Mark a helix run in the SS array. Only assigns Helix to Coil residues.
+fn mark_helix_run(
+    ss: &mut [SSType],
+    first_turn: usize,
+    last_turn: usize,
+    turn_size: usize,
+    n_residues: usize,
+) {
+    let run_len = last_turn - first_turn + 1;
+    if run_len < 2 {
+        return;
+    }
+    let helix_start = first_turn + 1;
+    // Turn at position p marks residues p+1..=p+n-1. With consecutive
+    // turns from first_turn to last_turn, the helix spans
+    // first_turn+1 ..= last_turn+turn_size-1.
+    let helix_end = (last_turn + turn_size).min(n_residues);
+    for s in ss.iter_mut().take(helix_end).skip(helix_start) {
+        if *s == SSType::Coil {
+            *s = SSType::Helix;
+        }
+    }
+}
+
+/// Detect all beta-bridges in the structure.
+fn detect_bridges(
+    n_residues: usize,
+    has_hbond: &dyn Fn(usize, usize) -> bool,
+) -> Vec<Bridge> {
+    let mut bridges = Vec::new();
+
+    for i in 0..n_residues {
+        for j in (i + 3)..n_residues {
+            // Parallel bridge: Hbond(i-1,j) && Hbond(j,i+1)
+            //               or Hbond(j-1,i) && Hbond(i,j+1)
             let parallel = (i > 0
-                && j + 1 < n_residues
-                && has_hbond(i, j)
-                && has_hbond(j + 1, i))
+                && i + 1 < n_residues
+                && has_hbond(j, i - 1)
+                && has_hbond(i + 1, j))
                 || (j > 0
-                    && i + 1 < n_residues
-                    && has_hbond(j, i)
-                    && has_hbond(i + 1, j));
+                    && j + 1 < n_residues
+                    && has_hbond(i, j - 1)
+                    && has_hbond(j + 1, i));
 
-            let antiparallel = (has_hbond(i, j) && has_hbond(j, i))
+            // Antiparallel bridge: Hbond(i,j) && Hbond(j,i)
+            //                   or Hbond(i-1,j+1) && Hbond(j-1,i+1)
+            let antiparallel = (has_hbond(j, i) && has_hbond(i, j))
                 || (i > 0
                     && j + 1 < n_residues
                     && j > 0
                     && i + 1 < n_residues
-                    && has_hbond(i, j)
-                    && has_hbond(j, i));
+                    && has_hbond(j + 1, i - 1)
+                    && has_hbond(i + 1, j - 1));
 
-            if parallel || antiparallel {
-                raw_ss[i] = SSType::Sheet;
-                raw_ss[j] = SSType::Sheet;
+            if parallel {
+                bridges.push(Bridge {
+                    i,
+                    j,
+                    kind: BridgeType::Parallel,
+                });
+            }
+            if antiparallel {
+                bridges.push(Bridge {
+                    i,
+                    j,
+                    kind: BridgeType::Antiparallel,
+                });
             }
         }
     }
 
-    raw_ss
+    bridges
+}
+
+/// Build ladders from bridges and mark all ladder residues as Sheet.
+///
+/// A ladder is a maximal sequence of consecutive bridges of the same type.
+/// Parallel consecutive: bridge(i,j) and bridge(i+1,j+1).
+/// Antiparallel consecutive: bridge(i,j) and bridge(i+1,j-1).
+///
+/// Even isolated bridges (ladders of length 1) mark both residues.
+fn build_ladders_and_mark(bridges: &[Bridge], n_residues: usize) -> Vec<bool> {
+    let mut is_sheet = vec![false; n_residues];
+
+    if bridges.is_empty() {
+        return is_sheet;
+    }
+
+    // Mark all bridge partners.
+    for b in bridges {
+        is_sheet[b.i] = true;
+        is_sheet[b.j] = true;
+    }
+
+    // Build ladders: chains of consecutive bridges of the same type.
+    let mut used = vec![false; bridges.len()];
+
+    for idx in 0..bridges.len() {
+        if used[idx] {
+            continue;
+        }
+        used[idx] = true;
+
+        let mut ladder = vec![bridges[idx]];
+        extend_ladder(&mut ladder, bridges, &mut used);
+        mark_ladder_residues(&ladder, &mut is_sheet);
+    }
+
+    is_sheet
+}
+
+/// Extend a ladder by finding consecutive bridges of the same type.
+fn extend_ladder(
+    ladder: &mut Vec<Bridge>,
+    bridges: &[Bridge],
+    used: &mut [bool],
+) {
+    loop {
+        let last = ladder[ladder.len() - 1];
+        let next_i = last.i + 1;
+        let next_j = match last.kind {
+            BridgeType::Parallel => last.j + 1,
+            BridgeType::Antiparallel => {
+                if last.j == 0 {
+                    break;
+                }
+                last.j - 1
+            }
+        };
+
+        let found = bridges.iter().enumerate().find(|(bi, b)| {
+            !used[*bi] && b.kind == last.kind && b.i == next_i && b.j == next_j
+        });
+
+        if let Some((bi, b)) = found {
+            used[bi] = true;
+            ladder.push(*b);
+        } else {
+            break;
+        }
+    }
+}
+
+/// Mark all residues spanned by a ladder as Sheet.
+fn mark_ladder_residues(ladder: &[Bridge], is_sheet: &mut [bool]) {
+    if ladder.len() <= 1 {
+        return; // Single bridges already marked by the initial pass.
+    }
+
+    let i_min = ladder.iter().map(|b| b.i).min().unwrap_or(0);
+    let i_max = ladder.iter().map(|b| b.i).max().unwrap_or(0);
+    let j_min = ladder.iter().map(|b| b.j).min().unwrap_or(0);
+    let j_max = ladder.iter().map(|b| b.j).max().unwrap_or(0);
+
+    for s in is_sheet.iter_mut().take(i_max + 1).skip(i_min) {
+        *s = true;
+    }
+    for s in is_sheet.iter_mut().take(j_max + 1).skip(j_min) {
+        *s = true;
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::analysis::bonds::hydrogen::HBond;
+
+    /// Helper: create an H-bond with dummy energy.
+    fn hb(donor: usize, acceptor: usize) -> HBond {
+        HBond {
+            donor,
+            acceptor,
+            energy: -1.0,
+        }
+    }
+
+    // --- Basic edge cases ---
+
+    #[test]
+    fn empty_input() {
+        let result = classify(&[], 0);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn single_residue() {
+        let result = classify(&[], 1);
+        assert_eq!(result, vec![SSType::Coil]);
+    }
+
+    #[test]
+    fn two_residues_no_hbonds() {
+        let result = classify(&[], 2);
+        assert_eq!(result, vec![SSType::Coil; 2]);
+    }
+
+    // --- Helix detection ---
+
+    #[test]
+    fn alpha_helix_minimal() {
+        // Minimal alpha-helix: 2 consecutive 4-turns at i=0 and i=1.
+        // Turn at 0: hbond(4, 0). Turn at 1: hbond(5, 1).
+        // Marks residues 1..=4 as Helix.
+        let hbonds = vec![hb(4, 0), hb(5, 1)];
+        let result = classify(&hbonds, 6);
+        assert_eq!(result[0], SSType::Coil);
+        assert_eq!(result[1], SSType::Helix);
+        assert_eq!(result[2], SSType::Helix);
+        assert_eq!(result[3], SSType::Helix);
+        assert_eq!(result[4], SSType::Helix);
+        assert_eq!(result[5], SSType::Coil);
+    }
+
+    #[test]
+    fn alpha_helix_longer() {
+        // 3 consecutive 4-turns at 0,1,2 -> marks 1..=5
+        // (first_turn+1=1 through last_turn+turn_size-1=2+3=5)
+        let hbonds = vec![hb(4, 0), hb(5, 1), hb(6, 2)];
+        let result = classify(&hbonds, 8);
+        assert_eq!(result[0], SSType::Coil);
+        assert!(result[1..=5].iter().all(|&s| s == SSType::Helix));
+        assert_eq!(result[6], SSType::Coil);
+    }
+
+    #[test]
+    fn three_ten_helix_minimal() {
+        // Minimal 3_10 helix: 2 consecutive 3-turns at i=0 and i=1.
+        // Turn at 0: hbond(3, 0). Turn at 1: hbond(4, 1).
+        // Marks residues 1..=4 (start+1=1 to last_turn+turn_size=1+3=4).
+        let hbonds = vec![hb(3, 0), hb(4, 1)];
+        let result = classify(&hbonds, 5);
+        assert_eq!(result[0], SSType::Coil);
+        assert_eq!(result[1], SSType::Helix);
+        assert_eq!(result[2], SSType::Helix);
+        assert_eq!(result[3], SSType::Helix);
+        assert_eq!(result[4], SSType::Coil);
+    }
+
+    #[test]
+    fn single_turn_not_helix() {
+        // A single 4-turn at i=0 (no consecutive partner) should NOT form a
+        // helix.
+        let hbonds = vec![hb(4, 0)];
+        let result = classify(&hbonds, 5);
+        assert_eq!(result, vec![SSType::Coil; 5]);
+    }
+
+    #[test]
+    fn alpha_priority_over_310() {
+        // Alpha turns at 0,1 mark 1..=4. 3_10 turns at 2,3 would mark 3..=5.
+        // Residues 3,4 already alpha, so only 5 gets added by 3_10.
+        let hbonds = vec![
+            hb(4, 0),
+            hb(5, 1), // alpha turns
+            hb(5, 2),
+            hb(6, 3), // 3_10 turns
+        ];
+        let result = classify(&hbonds, 7);
+        assert!(result[1..=5].iter().all(|&s| s == SSType::Helix));
+    }
+
+    // --- Sheet detection ---
+
+    #[test]
+    fn antiparallel_bridge_pair() {
+        // Antiparallel bridge: hbond(j, i) && hbond(i, j)
+        let hbonds = vec![hb(15, 5), hb(5, 15)];
+        let result = classify(&hbonds, 20);
+        assert_eq!(result[5], SSType::Sheet);
+        assert_eq!(result[15], SSType::Sheet);
+        assert_eq!(result[0], SSType::Coil);
+        assert_eq!(result[10], SSType::Coil);
+    }
+
+    #[test]
+    fn parallel_bridge_pair() {
+        // Parallel bridge: hbond(j, i-1) && hbond(i+1, j)
+        let hbonds = vec![hb(15, 4), hb(6, 15)];
+        let result = classify(&hbonds, 20);
+        assert_eq!(result[5], SSType::Sheet);
+        assert_eq!(result[15], SSType::Sheet);
+    }
+
+    #[test]
+    fn antiparallel_ladder_extends() {
+        // Antiparallel ladder: bridges (5,15) and (6,14).
+        let hbonds = vec![hb(15, 5), hb(5, 15), hb(14, 6), hb(6, 14)];
+        let result = classify(&hbonds, 20);
+        assert_eq!(result[5], SSType::Sheet);
+        assert_eq!(result[6], SSType::Sheet);
+        assert_eq!(result[14], SSType::Sheet);
+        assert_eq!(result[15], SSType::Sheet);
+    }
+
+    #[test]
+    fn parallel_ladder_extends() {
+        // Parallel ladder: bridges (5,15) and (6,16).
+        let hbonds = vec![hb(15, 4), hb(6, 15), hb(16, 5), hb(7, 16)];
+        let result = classify(&hbonds, 20);
+        assert_eq!(result[5], SSType::Sheet);
+        assert_eq!(result[6], SSType::Sheet);
+        assert_eq!(result[15], SSType::Sheet);
+        assert_eq!(result[16], SSType::Sheet);
+    }
+
+    #[test]
+    fn helix_takes_priority_over_sheet() {
+        // Helix at 2-5, bridge at 5 and 15. Residue 5 should stay Helix.
+        let hbonds = vec![
+            hb(5, 1),
+            hb(6, 2), // alpha turns
+            hb(15, 5),
+            hb(5, 15), // antiparallel bridge
+        ];
+        let result = classify(&hbonds, 20);
+        assert_eq!(result[5], SSType::Helix);
+        assert_eq!(result[15], SSType::Sheet);
+    }
+
+    #[test]
+    fn bridge_requires_separation() {
+        // Minimum separation is 3 (j >= i+3).
+        let hbonds = vec![hb(8, 5), hb(5, 8)]; // separation 3: works
+        let result = classify(&hbonds, 10);
+        assert_eq!(result[5], SSType::Sheet);
+        assert_eq!(result[8], SSType::Sheet);
+
+        let hbonds2 = vec![hb(7, 5), hb(5, 7)]; // separation 2: too close
+        let result2 = classify(&hbonds2, 10);
+        assert_eq!(result2[5], SSType::Coil);
+        assert_eq!(result2[7], SSType::Coil);
+    }
+
+    // --- Integration tests with real structures ---
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn ubiquitin_secondary_structure() {
+        let path = std::path::Path::new("../viso/assets/models/1ubq.cif");
+        if !path.exists() {
+            return;
+        }
+
+        let entities =
+            crate::adapters::pdb::structure_file_to_entities(path).unwrap();
+
+        let protein = entities.iter().find_map(|e| e.as_protein()).unwrap();
+
+        let ss = protein.detect_ss();
+
+        // 76 residues: M1-G76. Ground truth from mkdssp 4.4.10 run on
+        // our exact 1ubq.cif, converted to Q3 (H,G,I→H; E,B→E; else→C).
+        // DSSP8: -EEEEEETTS-EEEEE--TTSBHHHHHHHHHHHH---GGGEEEEETTEEPPTTSBTGGGTPPTT-EEEEEE--S--
+        let expected =
+            "CEEEEEECCCCEEEEECCCCCEHHHHHHHHHHHHCCCHHHEEEEECCEECCCCCECHHHCCCCCCEEEEEECCCCC";
+        assert_eq!(
+            ss.len(),
+            expected.len(),
+            "SS length {} != expected {}",
+            ss.len(),
+            expected.len()
+        );
+
+        let expected_ss: Vec<SSType> = expected
+            .chars()
+            .map(|c| match c {
+                'H' => SSType::Helix,
+                'E' => SSType::Sheet,
+                _ => SSType::Coil,
+            })
+            .collect();
+
+        // Count matches.
+        let mut matches = 0;
+        let mut mismatches = Vec::new();
+        for (i, (got, exp)) in ss.iter().zip(expected_ss.iter()).enumerate() {
+            if got == exp {
+                matches += 1;
+            } else {
+                mismatches.push((i, *exp, *got));
+            }
+        }
+
+        let accuracy = f64::from(u32::try_from(matches).unwrap())
+            / f64::from(u32::try_from(ss.len()).unwrap());
+
+        let got_str: String = ss
+            .iter()
+            .map(|s| match s {
+                SSType::Helix => 'H',
+                SSType::Sheet => 'E',
+                SSType::Coil => 'C',
+            })
+            .collect();
+
+        assert!(
+            accuracy > 0.90,
+            "1UBQ accuracy {:.1}% below 90%\n  \
+             expected: {expected}\n  got:      {got_str}\n  \
+             mismatches: {mismatches:?}",
+            accuracy * 100.0
+        );
+
+        // Alpha helix: indices 22-33 should be mostly Helix.
+        let helix_count =
+            ss[22..=33].iter().filter(|&&s| s == SSType::Helix).count();
+        assert!(
+            helix_count >= 10,
+            "Alpha helix (22-33): only {helix_count}/12 residues are Helix"
+        );
+
+        // Beta strands.
+        let strand_ranges = [(1, 6), (9, 16), (39, 44), (47, 49), (63, 71)];
+        for (start, end) in strand_ranges {
+            let sheet_count = ss[start..=end]
+                .iter()
+                .filter(|&&s| s == SSType::Sheet)
+                .count();
+            let len = end - start + 1;
+            assert!(
+                sheet_count >= len / 2,
+                "Strand ({start}-{end}): only {sheet_count}/{len} residues \
+                 are Sheet"
+            );
+        }
+
+        // 3_10 helix: indices 55-58 should have some Helix.
+        let helix_310 =
+            ss[55..=58].iter().filter(|&&s| s == SSType::Helix).count();
+        assert!(
+            helix_310 >= 2,
+            "3_10 helix (55-58): only {helix_310}/4 residues are Helix"
+        );
+    }
+
+    #[test]
+    fn hemoglobin_mostly_helical() {
+        let path = std::path::Path::new("../viso/assets/models/4hhb.cif");
+        if !path.exists() {
+            return;
+        }
+
+        let entities =
+            crate::adapters::pdb::structure_file_to_entities(path).unwrap();
+
+        let protein = entities.iter().find_map(|e| e.as_protein()).unwrap();
+
+        let ss = protein.detect_ss();
+
+        let helix_count = ss.iter().filter(|&&s| s == SSType::Helix).count();
+        let helix_frac = f64::from(u32::try_from(helix_count).unwrap())
+            / f64::from(u32::try_from(ss.len()).unwrap());
+        assert!(
+            helix_frac > 0.50,
+            "4HHB should be mostly helical, got {:.1}% helix",
+            helix_frac * 100.0
+        );
+
+        let sheet_count = ss.iter().filter(|&&s| s == SSType::Sheet).count();
+        let sheet_frac = f64::from(u32::try_from(sheet_count).unwrap())
+            / f64::from(u32::try_from(ss.len()).unwrap());
+        assert!(
+            sheet_frac < 0.15,
+            "4HHB should have very little sheet, got {:.1}%",
+            sheet_frac * 100.0
+        );
+    }
 }

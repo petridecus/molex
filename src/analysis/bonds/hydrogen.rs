@@ -40,17 +40,19 @@ pub fn detect_hbonds(residues: &[ResidueBackbone]) -> Vec<HBond> {
         return Vec::new();
     }
 
-    // Estimate amide H positions.
+    // Estimate amide H positions using the bisector method:
+    // H is placed 1.0 Å from N along the bisector of (N - C_prev) and
+    // (N - CA). This matches the canonical DSSP placement.
     let h_positions: Vec<Vec3> = (0..n)
         .map(|i| {
-            if i == 0 {
-                let n_ca = (residues[i].n - residues[i].ca).normalize_or_zero();
-                residues[i].n + n_ca
+            let v_ca = (residues[i].n - residues[i].ca).normalize_or_zero();
+            let v_prev = if i > 0 {
+                (residues[i].n - residues[i - 1].c).normalize_or_zero()
             } else {
-                let n_c_prev =
-                    (residues[i].n - residues[i - 1].c).normalize_or_zero();
-                residues[i].n + n_c_prev
-            }
+                v_ca
+            };
+            let bisector = (v_ca + v_prev).normalize_or_zero();
+            residues[i].n + bisector
         })
         .collect();
 
