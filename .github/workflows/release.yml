@@ -25,18 +25,21 @@ jobs:
 
   wheels:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            manylinux: auto
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
+            manylinux: 2_28
           - os: macos-14
             target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
+            manylinux: auto
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            manylinux: auto
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +48,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
           command: build
           args: --release --features python
 
