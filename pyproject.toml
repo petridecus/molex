@@ -4,15 +4,20 @@ build-backend = "maturin"
 
 [project]
 name = "molex"
-version = "0.2.1"
+version = "0.2.2"
 description = "Parse, analyze, and transform molecular structure data (PDB, mmCIF, BinaryCIF, MRC)"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
-authors = [
-  { name = "Andreas Petrides" },
+authors = [{ name = "Andreas Petrides" }]
+keywords = [
+  "protein",
+  "molecular",
+  "pdb",
+  "mmcif",
+  "structure",
+  "bioinformatics",
 ]
-keywords = ["protein", "molecular", "pdb", "mmcif", "structure", "bioinformatics"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
