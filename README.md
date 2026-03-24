@@ -1,36 +1,46 @@
 # molex
 
-**Mol**ecular **ex**change — a Rust library for parsing, transforming,
-and serializing molecular structure data. Provides a unified type system
-for proteins, nucleic acids, ligands, and other biomolecules across
-multiple file formats.
+**Mol**ecular **ex**change — a Rust library for parsing, analyzing,
+and serializing molecular structure data.
 
 ## Features
 
-- **Parse** PDB, mmCIF, BinaryCIF, DCD trajectory, and MRC density files
-- **Convert** between formats via a canonical intermediate representation
-- **Transform** coordinates: Kabsch alignment, filtering, interpolation
-- **Analyze** secondary structure (DSSP), bond inference, validation
-- **Extract** render-ready geometry (backbone chains, sidechains, bonds)
-- **Serialize** to compact binary formats for IPC and storage
+- **Parse** PDB, mmCIF, BinaryCIF, MRC/CCP4 density maps, and DCD trajectories
+- **Entity model** — proteins, nucleic acids, ligands, ions, waters, and cofactors as typed entities
+- **Analyze** — DSSP secondary structure, hydrogen bonds, covalent bonds, disulfide bridges
+- **Transform** — Kabsch alignment, CA extraction, backbone segments
+- **Serialize** — compact binary formats (COORDS01, ASSEM01) for FFI and IPC
+- **Python bindings** — PyO3 module with AtomWorks/Biotite interop
 
 ## Quick start
 
 ```rust
-use molex::{MoleculeEntity, MoleculeType};
-use molex::adapters::pdb::structure_file_to_entities;
+use molex::adapters::pdb::pdb_file_to_entities;
 
-let entities = structure_file_to_entities("1ubq.pdb".as_ref())?;
+let entities = pdb_file_to_entities("1ubq.pdb".as_ref())?;
 for e in &entities {
-    println!("{:?}: {} atoms", e.molecule_type, e.atom_count());
+    println!("{}: {} atoms", e.label(), e.atom_count());
 }
+```
+
+## Python
+
+```bash
+pip install molex
+```
+
+```python
+import molex
+
+coords_bytes = molex.pdb_to_coords(open("1ubq.pdb").read())
+pdb_string = molex.coords_to_pdb(coords_bytes)
 ```
 
 ## Optional features
 
 | Feature  | Description |
 |----------|-------------|
-| `python` | PyO3 bindings for use from Python (requires `pyo3`, `numpy`) |
+| `python` | PyO3 bindings for use from Python |
 
 ## Documentation
 

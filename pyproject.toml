@@ -4,13 +4,25 @@ build-backend = "maturin"
 
 [project]
 name = "molex"
-version = "0.2.0"
-description = "Coordinate format adapters for molecular structure models"
+version = "0.2.1"
+description = "Parse, analyze, and transform molecular structure data (PDB, mmCIF, BinaryCIF, MRC)"
+readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
   { name = "Andreas Petrides" },
 ]
+keywords = ["protein", "molecular", "pdb", "mmcif", "structure", "bioinformatics"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Topic :: Scientific/Engineering :: Chemistry",
+]
+
+[project.urls]
+Repository = "https://github.com/petridecus/molex"
+Documentation = "https://petridecus.github.io/molex/"
 
 [tool.maturin]
 features = ["pyo3/extension-module", "python"]

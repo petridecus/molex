@@ -1,9 +1,9 @@
 [package]
 name = "molex"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Andreas Petrides"]
-description = "Molecular exchange: parsing, transforming, and serializing molecular structure data"
+description = "Parse, analyze, and transform molecular structure data (PDB, mmCIF, BinaryCIF, MRC)"
 license = "MIT"
 repository = "https://github.com/petridecus/molconv"
 readme = "README.md"
