@@ -27,7 +27,7 @@ pub mod python;
 // ── Entity-first public API ─────────────────────────────────────────────
 // The most commonly used types, re-exported at the crate root.
 
-pub use analysis::{HBond, SSType};
+pub use analysis::{DisulfideBond, HBond, SSType};
 pub use element::Element;
 pub use entity::molecule::atom::Atom;
 pub use entity::molecule::protein::{
