@@ -21,6 +21,9 @@ pub mod entity;
 pub mod ffi;
 pub mod ops;
 
+#[cfg(feature = "xtal")]
+pub mod xtal;
+
 #[cfg(feature = "python")]
 pub mod python;
 

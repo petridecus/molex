@@ -11,8 +11,8 @@ use std::path::Path;
 pub use dom::{Block, ColumnIter, Columns, Document, Loop, RowIter, Value};
 // Typed extractors
 pub use extract::{
-    AtomSite, CifContent, CoordinateData, ExtractionError, Reflection,
-    ReflectionData, UnitCell,
+    AtomSite, CifContent, CoordinateData, ExtractionError, ObsDataType,
+    Reflection, ReflectionData, UnitCell,
 };
 // Parser
 pub use parse::{parse, CifParseError};

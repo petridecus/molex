@@ -23,10 +23,12 @@ thiserror = "1.0"
 glam = "0.30"
 rmp = "0.8"
 flate2 = "1"
+rustfft = { version = "6", optional = true }
 
 [features]
 default = []
 python = ["dep:pyo3", "dep:numpy"]
+xtal = ["dep:rustfft"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -61,7 +61,27 @@ pub struct CoordinateData {
     pub spacegroup: Option<String>,
 }
 
+/// How the observed data was originally stored in the SF-CIF file.
+///
+/// Structure factor amplitudes (F) and intensities (I) are related by I = F².
+/// The parser always converts to amplitudes in [`Reflection::f_meas`], but this
+/// tag records what was actually present in the file so downstream code can
+/// audit the provenance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObsDataType {
+    /// Amplitudes (F) were present in the file. No conversion needed.
+    Amplitude,
+    /// Intensities (I) were present and converted via F = √I, σ_F = σ_I /
+    /// (2√I).
+    Intensity,
+}
+
 /// A single reflection from the `_refln` category.
+///
+/// The [`f_meas`](Self::f_meas) and [`sigma_f_meas`](Self::sigma_f_meas) fields
+/// are always in **amplitude** (F) units, regardless of whether the source file
+/// stored amplitudes or intensities. See [`ReflectionData::obs_data_type`]
+/// to check what was originally present.
 #[derive(Debug, Clone)]
 pub struct Reflection {
     /// Miller index h.
@@ -70,16 +90,16 @@ pub struct Reflection {
     pub k: i32,
     /// Miller index l.
     pub l: i32,
-    /// Measured structure factor amplitude.
+    /// Measured structure factor amplitude (always F, even if the file had I).
     pub f_meas: Option<f64>,
-    /// Standard uncertainty of measured amplitude.
+    /// Standard uncertainty of measured amplitude (always σ_F).
     pub sigma_f_meas: Option<f64>,
     /// Calculated structure factor amplitude.
     pub f_calc: Option<f64>,
     /// Calculated phase angle (degrees).
     pub phase_calc: Option<f64>,
-    /// R-free flag character (e.g. `o` = observed, `f` = free-set).
-    pub status: Option<char>,
+    /// R-free flag: `true` = free/test set, `false` = working set.
+    pub free_flag: bool,
 }
 
 /// Structure factor / reflection data extracted from an SF-CIF block.
@@ -91,6 +111,11 @@ pub struct ReflectionData {
     pub spacegroup: Option<String>,
     /// All reflections in the block.
     pub reflections: Vec<Reflection>,
+    /// Whether the source file contained amplitudes (F) or intensities (I).
+    pub obs_data_type: ObsDataType,
+    /// Whether the R-free flags were read from the file (`true`) or all
+    /// reflections defaulted to the working set (`false`).
+    pub free_flags_from_file: bool,
 }
 
 /// Auto-detected content of a CIF data block.
@@ -286,9 +311,41 @@ impl TryFrom<&Block> for CoordinateData {
     }
 }
 
+/// Try the first column name that exists in the block.
+fn first_available_column<'a>(
+    block: &'a Block,
+    names: &[&str],
+) -> Option<Vec<&'a Value>> {
+    for &name in names {
+        if let Some(col) = block.column(name) {
+            return Some(col.collect());
+        }
+    }
+    None
+}
+
+/// Determine whether a `_refln.status` character means "free set".
+///
+/// PDB convention: `f` = free-set, `o` = observed/working.
+/// Some files use `0`/`1` in the status column too.
+fn status_is_free(ch: char) -> bool {
+    matches!(ch, 'f' | 'F')
+}
+
+/// Determine whether a `_refln.pdbx_r_free_flag` integer means "free set".
+///
+/// PDB convention: typically 0 = free, 1 = working in some files, but the
+/// dominant convention (CCP4 / Phenix / Refmac) is: the flag value matching
+/// the "test" set index is free. Since most depositors use flag=1 for free,
+/// we treat 1 as free. This is configurable downstream if needed.
+fn rfree_flag_is_free(val: i32) -> bool {
+    val == 1
+}
+
 impl TryFrom<&Block> for ReflectionData {
     type Error = ExtractionError;
 
+    #[allow(clippy::too_many_lines)]
     fn try_from(block: &Block) -> Result<Self, Self::Error> {
         let cell = extract_cell(block).ok_or_else(|| {
             ExtractionError::MissingTag("_cell.length_*".into())
@@ -298,35 +355,97 @@ impl TryFrom<&Block> for ReflectionData {
             .columns(&["_refln.index_h", "_refln.index_k", "_refln.index_l"])
             .ok_or_else(|| ExtractionError::MissingCategory("_refln".into()))?;
 
-        // Optional columns
-        let f_meas: Option<Vec<_>> =
-            block.column("_refln.F_meas_au").map(Iterator::collect);
-        let sigma: Option<Vec<_>> = block
-            .column("_refln.F_meas_sigma_au")
-            .map(Iterator::collect);
-        let f_calc: Option<Vec<_>> = block
-            .column("_refln.F_calc_au")
-            .or_else(|| block.column("_refln.F_calc"))
-            .map(Iterator::collect);
+        // ── Observed data: try amplitudes first, fall back to intensities ──
+        //
+        // Amplitude columns (F):
+        //   _refln.F_meas_au  /  _refln.F_meas_sigma_au   (modern mmCIF)
+        //   _refln.F_obs      /  _refln.F_obs_sigma        (older convention)
+        //
+        // Intensity columns (I = F²):
+        //   _refln.intensity_meas  /  _refln.intensity_sigma   (modern)
+        //   _refln.I_obs           /  _refln.I_obs_sigma       (older)
+
+        let amp_col = first_available_column(
+            block,
+            &["_refln.F_meas_au", "_refln.F_obs"],
+        );
+        let amp_sigma_col = first_available_column(
+            block,
+            &["_refln.F_meas_sigma_au", "_refln.F_obs_sigma"],
+        );
+
+        let int_col = first_available_column(
+            block,
+            &["_refln.intensity_meas", "_refln.I_obs"],
+        );
+        let int_sigma_col = first_available_column(
+            block,
+            &["_refln.intensity_sigma", "_refln.I_obs_sigma"],
+        );
+
+        // Decide: amplitudes take priority over intensities.
+        let use_intensities = amp_col.is_none() && int_col.is_some();
+        let obs_data_type = if use_intensities {
+            ObsDataType::Intensity
+        } else {
+            ObsDataType::Amplitude
+        };
+
+        let (obs_col, obs_sigma_col) = if use_intensities {
+            (int_col, int_sigma_col)
+        } else {
+            (amp_col, amp_sigma_col)
+        };
+
+        // ── Calculated structure factors ──
+        let f_calc = first_available_column(
+            block,
+            &["_refln.F_calc_au", "_refln.F_calc"],
+        );
         let phase: Option<Vec<_>> =
             block.column("_refln.phase_calc").map(Iterator::collect);
-        let status: Option<Vec<_>> =
+
+        // ── R-free flags ──
+        // Try modern pdbx_r_free_flag (integer) first, then legacy status
+        // (char).
+        let rfree_int: Option<Vec<_>> = block
+            .column("_refln.pdbx_r_free_flag")
+            .map(Iterator::collect);
+        let status_char: Option<Vec<_>> =
             block.column("_refln.status").map(Iterator::collect);
+        let free_flags_from_file = rfree_int.is_some() || status_char.is_some();
 
         let mut reflections = Vec::with_capacity(cols.nrows());
         for (i, row) in cols.iter().enumerate() {
+            // Raw observed value from whichever column we found.
+            let raw_obs = obs_col
+                .as_ref()
+                .and_then(|v| v.get(i))
+                .and_then(|v| v.as_f64());
+            let raw_sigma = obs_sigma_col
+                .as_ref()
+                .and_then(|v| v.get(i))
+                .and_then(|v| v.as_f64());
+
+            // Convert intensities → amplitudes if needed.
+            let (f_meas, sigma_f_meas) = if use_intensities {
+                intensity_to_amplitude(raw_obs, raw_sigma)
+            } else {
+                (raw_obs, raw_sigma)
+            };
+
+            let free_flag = extract_free_flag(
+                rfree_int.as_deref(),
+                status_char.as_deref(),
+                i,
+            );
+
             reflections.push(Reflection {
                 h: require_i32(row[0], "_refln.index_h", i)?,
                 k: require_i32(row[1], "_refln.index_k", i)?,
                 l: require_i32(row[2], "_refln.index_l", i)?,
-                f_meas: f_meas
-                    .as_ref()
-                    .and_then(|v| v.get(i))
-                    .and_then(|v| v.as_f64()),
-                sigma_f_meas: sigma
-                    .as_ref()
-                    .and_then(|v| v.get(i))
-                    .and_then(|v| v.as_f64()),
+                f_meas,
+                sigma_f_meas,
                 f_calc: f_calc
                     .as_ref()
                     .and_then(|v| v.get(i))
@@ -335,11 +454,7 @@ impl TryFrom<&Block> for ReflectionData {
                     .as_ref()
                     .and_then(|v| v.get(i))
                     .and_then(|v| v.as_f64()),
-                status: status
-                    .as_ref()
-                    .and_then(|v| v.get(i))
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| s.chars().next()),
+                free_flag,
             });
         }
 
@@ -347,8 +462,55 @@ impl TryFrom<&Block> for ReflectionData {
             cell,
             spacegroup: extract_spacegroup(block),
             reflections,
+            obs_data_type,
+            free_flags_from_file,
         })
     }
+}
+
+/// Determine the R-free flag for reflection `i` from available columns.
+///
+/// Prefers the modern `pdbx_r_free_flag` integer column, falling back to the
+/// legacy `status` character column, then defaulting to `false` (working set).
+fn extract_free_flag(
+    rfree_int: Option<&[&Value]>,
+    status_char: Option<&[&Value]>,
+    i: usize,
+) -> bool {
+    if let Some(vals) = rfree_int {
+        return vals
+            .get(i)
+            .and_then(|v| v.as_i32())
+            .is_some_and(rfree_flag_is_free);
+    }
+    if let Some(vals) = status_char {
+        return vals
+            .get(i)
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.chars().next())
+            .is_some_and(status_is_free);
+    }
+    false
+}
+
+/// Convert intensity (I) and its uncertainty (σ_I) to amplitude (F) and σ_F.
+///
+/// `F = √I` and `σ_F = σ_I / (2√I)` (first-order error propagation).
+///
+/// Negative or zero intensities yield `None` since F is undefined.
+fn intensity_to_amplitude(
+    intensity: Option<f64>,
+    sigma_i: Option<f64>,
+) -> (Option<f64>, Option<f64>) {
+    let Some(i_val) = intensity else {
+        return (None, None);
+    };
+    if i_val <= 0.0 {
+        return (None, None);
+    }
+    let f = i_val.sqrt();
+    let sigma_f = sigma_i.map(|si| si / (2.0 * f));
+    (Some(f), sigma_f)
 }
 
 impl From<Block> for CifContent {
@@ -365,193 +527,5 @@ impl From<Block> for CifContent {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use crate::adapters::cif::parse::parse;
-
-    const MMCIF_SNIPPET: &str = r"data_1ABC
-_cell.length_a   50.000
-_cell.length_b   60.000
-_cell.length_c   70.000
-_cell.angle_alpha 90.00
-_cell.angle_beta  90.00
-_cell.angle_gamma 90.00
-_symmetry.space_group_name_H-M 'P 21 21 21'
-loop_
-_atom_site.group_PDB
-_atom_site.label_atom_id
-_atom_site.label_comp_id
-_atom_site.label_asym_id
-_atom_site.label_seq_id
-_atom_site.Cartn_x
-_atom_site.Cartn_y
-_atom_site.Cartn_z
-_atom_site.type_symbol
-_atom_site.occupancy
-_atom_site.B_iso_or_equiv
-ATOM N   ALA A 1 10.000 20.000 30.000 N 1.00 15.0
-ATOM CA  ALA A 1 11.000 21.000 31.000 C 1.00 16.0
-ATOM C   ALA A 1 12.000 22.000 32.000 C 1.00 17.0
-HETATM O   HOH B 100 5.000 6.000 7.000 O 1.00 20.0
-";
-
-    const SF_SNIPPET: &str = r"data_r1abcsf
-_cell.length_a   50.000
-_cell.length_b   60.000
-_cell.length_c   70.000
-_cell.angle_alpha 90.00
-_cell.angle_beta  90.00
-_cell.angle_gamma 90.00
-_symmetry.space_group_name_H-M 'P 21 21 21'
-loop_
-_refln.index_h
-_refln.index_k
-_refln.index_l
-_refln.F_meas_au
-_refln.F_meas_sigma_au
-_refln.status
-1  0  0  100.5 2.3 o
-0  1  0  200.1 3.4 o
-0  0  1  150.7 2.8 f
--1 2  3  .     .   o
-";
-
-    #[test]
-    fn extract_coordinates() {
-        let doc = parse(MMCIF_SNIPPET).unwrap();
-        let coords = CoordinateData::try_from(&doc.blocks[0]).unwrap();
-
-        assert_eq!(coords.atoms.len(), 4);
-        assert_eq!(coords.atoms[0].label, "N");
-        assert_eq!(coords.atoms[0].residue, "ALA");
-        assert_eq!(coords.atoms[0].chain, "A");
-        assert_eq!(coords.atoms[0].seq_id, Some(1));
-        assert!((coords.atoms[0].x - 10.0).abs() < 1e-6);
-        assert!((coords.atoms[1].y - 21.0).abs() < 1e-6);
-        assert_eq!(coords.atoms[1].element, "C");
-        assert!((coords.atoms[2].b_factor - 17.0).abs() < 1e-6);
-
-        // HETATM
-        assert_eq!(coords.atoms[3].group, "HETATM");
-        assert_eq!(coords.atoms[3].residue, "HOH");
-        assert_eq!(coords.atoms[3].chain, "B");
-    }
-
-    #[test]
-    fn extract_unit_cell() {
-        let doc = parse(MMCIF_SNIPPET).unwrap();
-        let cell = UnitCell::try_from(&doc.blocks[0]).unwrap();
-        assert!((cell.a - 50.0).abs() < 1e-6);
-        assert!((cell.b - 60.0).abs() < 1e-6);
-        assert!((cell.c - 70.0).abs() < 1e-6);
-        assert!((cell.alpha - 90.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn extract_spacegroup_from_block() {
-        let doc = parse(MMCIF_SNIPPET).unwrap();
-        let coords = CoordinateData::try_from(&doc.blocks[0]).unwrap();
-        assert_eq!(coords.spacegroup.as_deref(), Some("P 21 21 21"));
-    }
-
-    #[test]
-    fn extract_reflections() {
-        let doc = parse(SF_SNIPPET).unwrap();
-        let sf = ReflectionData::try_from(&doc.blocks[0]).unwrap();
-
-        assert_eq!(sf.reflections.len(), 4);
-        assert_eq!(sf.reflections[0].h, 1);
-        assert_eq!(sf.reflections[0].k, 0);
-        assert_eq!(sf.reflections[0].l, 0);
-        assert!((sf.reflections[0].f_meas.unwrap() - 100.5).abs() < 1e-6);
-        assert!((sf.reflections[0].sigma_f_meas.unwrap() - 2.3).abs() < 1e-6);
-        assert_eq!(sf.reflections[0].status, Some('o'));
-
-        // Free-set flag
-        assert_eq!(sf.reflections[2].status, Some('f'));
-
-        // Negative index
-        assert_eq!(sf.reflections[3].h, -1);
-
-        // Inapplicable values → None
-        assert!(sf.reflections[3].f_meas.is_none());
-        assert!(sf.reflections[3].sigma_f_meas.is_none());
-    }
-
-    #[test]
-    fn reflection_cell_required() {
-        let input = "data_test\nloop_\n_refln.index_h\n_refln.index_k\n_refln.\
-                     index_l\n1 0 0\n";
-        let doc = parse(input).unwrap();
-        let err = ReflectionData::try_from(&doc.blocks[0]).unwrap_err();
-        assert!(matches!(err, ExtractionError::MissingTag(_)));
-    }
-
-    #[test]
-    fn autodetect_coordinates() {
-        let doc = parse(MMCIF_SNIPPET).unwrap();
-        let content = CifContent::from(doc.blocks.into_iter().next().unwrap());
-        assert!(matches!(content, CifContent::Coordinates(_)));
-    }
-
-    #[test]
-    fn autodetect_reflections() {
-        let doc = parse(SF_SNIPPET).unwrap();
-        let content = CifContent::from(doc.blocks.into_iter().next().unwrap());
-        assert!(matches!(content, CifContent::Reflections(_)));
-    }
-
-    #[test]
-    fn autodetect_unknown() {
-        let input = "data_mystery\n_some.tag value\n";
-        let doc = parse(input).unwrap();
-        let content = CifContent::from(doc.blocks.into_iter().next().unwrap());
-        assert!(matches!(content, CifContent::Unknown(_)));
-    }
-
-    #[test]
-    fn missing_atom_site_category() {
-        let input = "data_empty\n_cell.length_a 50.0\n";
-        let doc = parse(input).unwrap();
-        let err = CoordinateData::try_from(&doc.blocks[0]).unwrap_err();
-        assert!(matches!(err, ExtractionError::MissingCategory(_)));
-    }
-
-    #[test]
-    fn optional_columns_absent() {
-        // Minimal atom_site with only required columns
-        let input = r"data_min
-loop_
-_atom_site.label_atom_id
-_atom_site.label_comp_id
-_atom_site.label_asym_id
-_atom_site.Cartn_x
-_atom_site.Cartn_y
-_atom_site.Cartn_z
-CA ALA A 1.0 2.0 3.0
-";
-        let doc = parse(input).unwrap();
-        let coords = CoordinateData::try_from(&doc.blocks[0]).unwrap();
-        assert_eq!(coords.atoms.len(), 1);
-        assert_eq!(coords.atoms[0].label, "CA");
-        assert_eq!(coords.atoms[0].group, "ATOM"); // default
-        assert_eq!(coords.atoms[0].element, ""); // absent
-        assert!((coords.atoms[0].occupancy - 1.0).abs() < 1e-6); // default
-        assert!((coords.atoms[0].b_factor - 0.0).abs() < 1e-6); // default
-        assert!(coords.atoms[0].seq_id.is_none());
-        assert!(coords.cell.is_none());
-        assert!(coords.spacegroup.is_none());
-    }
-
-    #[test]
-    fn cell_with_uncertainty() {
-        let input = "data_test\n_cell.length_a 50.123(4)\n_cell.length_b \
-                     60.456(5)\n_cell.length_c 70.789(6)\n_cell.angle_alpha \
-                     90.00(1)\n_cell.angle_beta 90.00(1)\n_cell.angle_gamma \
-                     90.00(1)\n";
-        let doc = parse(input).unwrap();
-        let cell = UnitCell::try_from(&doc.blocks[0]).unwrap();
-        assert!((cell.a - 50.123).abs() < 1e-6);
-        assert!((cell.b - 60.456).abs() < 1e-6);
-    }
-}
+#[path = "extract_tests.rs"]
+mod tests;
