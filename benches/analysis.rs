@@ -4,6 +4,7 @@
     unused_results,
     unused_imports,
     unused_variables,
+    deprecated,
     clippy::unwrap_used,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,

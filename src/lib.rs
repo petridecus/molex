@@ -16,6 +16,7 @@
 pub mod adapters;
 /// Structural analysis: bond detection and secondary structure classification.
 pub mod analysis;
+pub mod assembly;
 /// Cross-cutting atom identifier (`AtomId`).
 pub mod atom_id;
 /// Cross-cutting covalent bond (`CovalentBond`).
@@ -39,6 +40,7 @@ pub mod python;
 )]
 pub use analysis::{detect_disulfide_bonds, DisulfideBond};
 pub use analysis::{detect_disulfides, BondOrder, HBond, SSType};
+pub use assembly::{Assembly, CoordinateSnapshot};
 pub use atom_id::AtomId;
 pub use bond::CovalentBond;
 pub use element::Element;

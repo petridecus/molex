@@ -298,7 +298,7 @@ fn mark_ladder_residues(ladder: &[Bridge], is_sheet: &mut [bool]) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, deprecated)]
 mod tests {
     use super::*;
     use crate::analysis::bonds::hydrogen::HBond;

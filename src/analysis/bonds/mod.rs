@@ -11,4 +11,9 @@ pub use disulfide::detect_disulfides;
     reason = "legacy re-export; removed in Phase 5 of assembly migration"
 )]
 pub use disulfide::{detect_disulfide_bonds, DisulfideBond};
-pub use hydrogen::{detect_hbonds, HBond};
+#[allow(
+    deprecated,
+    reason = "legacy re-export; detect_hbonds removed in Phase 5, HBond stays"
+)]
+pub use hydrogen::detect_hbonds;
+pub use hydrogen::HBond;

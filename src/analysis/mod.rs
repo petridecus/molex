@@ -14,10 +14,10 @@ pub use aabb::Aabb;
     deprecated,
     reason = "legacy re-export; removed in Phase 5 of assembly migration"
 )]
-pub use bonds::{detect_disulfide_bonds, DisulfideBond};
+pub use bonds::{detect_disulfide_bonds, detect_hbonds, DisulfideBond};
 pub use bonds::{
-    detect_disulfides, detect_hbonds, infer_bonds, BondOrder, HBond,
-    InferredBond, DEFAULT_TOLERANCE,
+    detect_disulfides, infer_bonds, BondOrder, HBond, InferredBond,
+    DEFAULT_TOLERANCE,
 };
 pub use volumetric::{
     binary_to_sdf, compute_gaussian_field, compute_ses_sdf, detect_cavities,
@@ -55,7 +55,18 @@ impl SSType {
 /// Returns both the SS assignments and the H-bond pairs that produced
 /// them. Use [`bonds::hydrogen::detect_hbonds`] directly if you only need
 /// H-bonds.
+#[deprecated(
+    since = "0.3.0",
+    note = "REMOVE IN PHASE 5. Use Assembly::new, which runs per-entity DSSP \
+            and flat-backbone H-bond detection eagerly; read results via \
+            Assembly::ss_types() and Assembly::hbonds()."
+)]
 #[must_use]
+#[allow(
+    deprecated,
+    reason = "calls newly-deprecated detect_hbonds; removed together in Phase \
+              5"
+)]
 pub fn detect_dssp(residues: &[ResidueBackbone]) -> (Vec<SSType>, Vec<HBond>) {
     let hbonds = detect_hbonds(residues);
     let ss = ss::classify(&hbonds, residues.len());
@@ -66,7 +77,16 @@ pub fn detect_dssp(residues: &[ResidueBackbone]) -> (Vec<SSType>, Vec<HBond>) {
 ///
 /// If `override_ss` is provided, uses it directly (after merging short
 /// segments). Otherwise runs DSSP detection on the backbone residues.
+#[deprecated(
+    since = "0.3.0",
+    note = "REMOVE IN PHASE 5. Use Assembly::new and read Assembly::ss_types; \
+            SS overrides become a viso-side concern post-migration."
+)]
 #[must_use]
+#[allow(
+    deprecated,
+    reason = "calls newly-deprecated detect_dssp; removed together in Phase 5"
+)]
 pub fn resolve_ss(
     override_ss: Option<&[SSType]>,
     residues: &[ResidueBackbone],
