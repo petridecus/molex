@@ -6,11 +6,18 @@ pub mod aabb;
 pub mod bonds;
 /// Secondary structure detection and parsing.
 pub mod ss;
+/// Volumetric analysis: voxel grids, SDFs, cavity detection, surfaces.
+pub mod volumetric;
 
 pub use aabb::Aabb;
 pub use bonds::{
     detect_disulfide_bonds, detect_hbonds, infer_bonds, BondOrder,
     DisulfideBond, HBond, InferredBond, DEFAULT_TOLERANCE,
+};
+pub use volumetric::{
+    binary_to_sdf, compute_gaussian_field, compute_ses_sdf, detect_cavities,
+    detect_cavity_mask, edt_1d, edt_3d, voxelize_sas, DetectedCavity,
+    ScalarVoxelGrid, VoxelBbox,
 };
 
 use crate::entity::molecule::protein::ResidueBackbone;
