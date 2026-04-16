@@ -121,27 +121,30 @@ fn test_update_protein_entities_no_duplication() {
 #[test]
 fn test_assembly_bytes_roundtrip_mixed() {
     let coords = Coords {
-        num_atoms: 5,
+        num_atoms: 6,
         atoms: vec![
             make_atom(1.0),
             make_atom(2.0),
             make_atom(3.0),
+            make_atom(4.0),
             make_atom(10.0),
             make_atom(20.0),
         ],
-        chain_ids: vec![b'A', b'A', b'A', b'B', b'C'],
+        chain_ids: vec![b'A', b'A', b'A', b'A', b'B', b'C'],
         res_names: vec![
+            res_name("ALA"),
             res_name("ALA"),
             res_name("ALA"),
             res_name("ALA"),
             res_name("ATP"),
             res_name("ZN"),
         ],
-        res_nums: vec![1, 1, 1, 1, 1],
+        res_nums: vec![1, 1, 1, 1, 1, 1],
         atom_names: vec![
             atom_name("N"),
             atom_name("CA"),
             atom_name("C"),
+            atom_name("O"),
             atom_name("C1"),
             atom_name("ZN"),
         ],
@@ -149,6 +152,7 @@ fn test_assembly_bytes_roundtrip_mixed() {
             Element::N,
             Element::C,
             Element::C,
+            Element::O,
             Element::C,
             Element::Zn,
         ],
@@ -172,13 +176,23 @@ fn test_assembly_bytes_roundtrip_mixed() {
 #[test]
 fn test_assembly_bytes_protein_only() {
     let coords = Coords {
-        num_atoms: 3,
-        atoms: vec![make_atom(1.0), make_atom(2.0), make_atom(3.0)],
-        chain_ids: vec![b'A'; 3],
-        res_names: vec![res_name("ALA"); 3],
-        res_nums: vec![1; 3],
-        atom_names: vec![atom_name("N"), atom_name("CA"), atom_name("C")],
-        elements: vec![Element::N, Element::C, Element::C],
+        num_atoms: 4,
+        atoms: vec![
+            make_atom(1.0),
+            make_atom(2.0),
+            make_atom(3.0),
+            make_atom(4.0),
+        ],
+        chain_ids: vec![b'A'; 4],
+        res_names: vec![res_name("ALA"); 4],
+        res_nums: vec![1; 4],
+        atom_names: vec![
+            atom_name("N"),
+            atom_name("CA"),
+            atom_name("C"),
+            atom_name("O"),
+        ],
+        elements: vec![Element::N, Element::C, Element::C, Element::O],
     };
 
     let entities = split_into_entities(&coords);
@@ -186,7 +200,7 @@ fn test_assembly_bytes_protein_only() {
     let roundtripped = deserialize_assembly(&bytes).unwrap();
     assert_eq!(roundtripped.len(), 1);
     assert_eq!(roundtripped[0].molecule_type(), MoleculeType::Protein);
-    assert_eq!(roundtripped[0].atom_count(), 3);
+    assert_eq!(roundtripped[0].atom_count(), 4);
 }
 
 #[test]
@@ -220,29 +234,59 @@ fn test_assembly_bytes_empty_entities() {
 #[test]
 fn test_assembly_byte_layout() {
     let coords = Coords {
-        num_atoms: 1,
-        atoms: vec![CoordsAtom {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-            occupancy: 1.0,
-            b_factor: 0.0,
-        }],
-        chain_ids: vec![b'A'],
-        res_names: vec![res_name("ALA")],
-        res_nums: vec![1],
-        atom_names: vec![atom_name("CA")],
-        elements: vec![Element::C],
+        num_atoms: 4,
+        atoms: vec![
+            CoordsAtom {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+                occupancy: 1.0,
+                b_factor: 0.0,
+            },
+            CoordsAtom {
+                x: 1.5,
+                y: 2.5,
+                z: 3.5,
+                occupancy: 1.0,
+                b_factor: 0.0,
+            },
+            CoordsAtom {
+                x: 2.0,
+                y: 3.0,
+                z: 4.0,
+                occupancy: 1.0,
+                b_factor: 0.0,
+            },
+            CoordsAtom {
+                x: 2.5,
+                y: 3.5,
+                z: 4.5,
+                occupancy: 1.0,
+                b_factor: 0.0,
+            },
+        ],
+        chain_ids: vec![b'A'; 4],
+        res_names: vec![res_name("ALA"); 4],
+        res_nums: vec![1; 4],
+        atom_names: vec![
+            atom_name("N"),
+            atom_name("CA"),
+            atom_name("C"),
+            atom_name("O"),
+        ],
+        elements: vec![Element::N, Element::C, Element::C, Element::O],
     };
     let entities = split_into_entities(&coords);
     let bytes = serialize_assembly(&entities).unwrap();
 
+    // 8 magic + 4 count + 5 per-entity header + 4 atoms * 26 = 121.
     assert_eq!(&bytes[0..8], b"ASSEM01\0");
     assert_eq!(u32::from_be_bytes(bytes[8..12].try_into().unwrap()), 1);
     assert_eq!(bytes[12], 0); // Protein
-    assert_eq!(u32::from_be_bytes(bytes[13..17].try_into().unwrap()), 1);
-    assert_eq!(f32::from_be_bytes(bytes[17..21].try_into().unwrap()), 1.0);
-    assert_eq!(bytes.len(), 43);
+    assert_eq!(u32::from_be_bytes(bytes[13..17].try_into().unwrap()), 4);
+    // First atom starts at offset 17; canonical ordering may reorder
+    // within residue, so we only check the header + total length.
+    assert_eq!(bytes.len(), 8 + 4 + 5 + 4 * 26);
 }
 
 // -- Split/merge --
@@ -389,27 +433,31 @@ fn test_split_solvent_consolidated() {
 #[test]
 fn test_polymer_structure() {
     let coords = Coords {
-        num_atoms: 6,
-        atoms: (0..6).map(|i| make_atom(i as f32)).collect(),
-        chain_ids: vec![b'A'; 6],
+        num_atoms: 8,
+        atoms: (0..8).map(|i| make_atom(i as f32)).collect(),
+        chain_ids: vec![b'A'; 8],
         res_names: vec![
             res_name("ALA"),
             res_name("ALA"),
             res_name("ALA"),
+            res_name("ALA"),
+            res_name("GLY"),
             res_name("GLY"),
             res_name("GLY"),
             res_name("GLY"),
         ],
-        res_nums: vec![1, 1, 1, 2, 2, 2],
+        res_nums: vec![1, 1, 1, 1, 2, 2, 2, 2],
         atom_names: vec![
             atom_name("N"),
             atom_name("CA"),
             atom_name("C"),
+            atom_name("O"),
             atom_name("N"),
             atom_name("CA"),
             atom_name("C"),
+            atom_name("O"),
         ],
-        elements: vec![Element::Unknown; 6],
+        elements: vec![Element::Unknown; 8],
     };
     let entities = split_into_entities(&coords);
     assert_eq!(entities.len(), 1);

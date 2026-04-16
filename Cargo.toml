@@ -23,6 +23,7 @@ thiserror = "1.0"
 glam = "0.30"
 rmp = "0.8"
 flate2 = "1"
+log = "0.4"
 
 [features]
 default = []
@@ -30,6 +31,7 @@ python = ["dep:pyo3", "dep:numpy"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+testing_logger = "0.1"
 
 [package.metadata.cargo-machete]
 ignored = ["numpy"]

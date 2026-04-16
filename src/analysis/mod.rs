@@ -10,9 +10,14 @@ pub mod ss;
 pub mod volumetric;
 
 pub use aabb::Aabb;
+#[allow(
+    deprecated,
+    reason = "legacy re-export; removed in Phase 5 of assembly migration"
+)]
+pub use bonds::{detect_disulfide_bonds, DisulfideBond};
 pub use bonds::{
-    detect_disulfide_bonds, detect_hbonds, infer_bonds, BondOrder,
-    DisulfideBond, HBond, InferredBond, DEFAULT_TOLERANCE,
+    detect_disulfides, detect_hbonds, infer_bonds, BondOrder, HBond,
+    InferredBond, DEFAULT_TOLERANCE,
 };
 pub use volumetric::{
     binary_to_sdf, compute_gaussian_field, compute_ses_sdf, detect_cavities,
