@@ -16,6 +16,12 @@
 pub mod adapters;
 /// Structural analysis: bond detection and secondary structure classification.
 pub mod analysis;
+/// Cross-cutting atom identifier (`AtomId`).
+pub mod atom_id;
+/// Cross-cutting covalent bond (`CovalentBond`).
+pub mod bond;
+/// Static chemistry tables: amino acids, nucleotides, atom names.
+pub mod chemistry;
 pub mod element;
 pub mod entity;
 pub mod ffi;
@@ -30,7 +36,9 @@ pub mod python;
 // ── Entity-first public API ─────────────────────────────────────────────
 // The most commonly used types, re-exported at the crate root.
 
-pub use analysis::{DisulfideBond, HBond, SSType};
+pub use analysis::{BondOrder, DisulfideBond, HBond, SSType};
+pub use atom_id::AtomId;
+pub use bond::CovalentBond;
 pub use element::Element;
 pub use entity::molecule::atom::Atom;
 pub use entity::molecule::protein::{
