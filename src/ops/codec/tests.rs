@@ -165,9 +165,9 @@ fn test_assembly_bytes_roundtrip_mixed() {
     assert_eq!(&bytes[0..8], b"ASSEM01\0");
 
     let roundtripped = deserialize_assembly(&bytes).unwrap();
-    assert_eq!(roundtripped.len(), entities.len());
+    assert_eq!(roundtripped.entities().len(), entities.len());
 
-    for (orig, rt) in entities.iter().zip(roundtripped.iter()) {
+    for (orig, rt) in entities.iter().zip(roundtripped.entities().iter()) {
         assert_eq!(orig.molecule_type(), rt.molecule_type());
         assert_eq!(orig.atom_count(), rt.atom_count());
     }
@@ -198,9 +198,12 @@ fn test_assembly_bytes_protein_only() {
     let entities = split_into_entities(&coords);
     let bytes = assembly_bytes(&entities).unwrap();
     let roundtripped = deserialize_assembly(&bytes).unwrap();
-    assert_eq!(roundtripped.len(), 1);
-    assert_eq!(roundtripped[0].molecule_type(), MoleculeType::Protein);
-    assert_eq!(roundtripped[0].atom_count(), 4);
+    assert_eq!(roundtripped.entities().len(), 1);
+    assert_eq!(
+        roundtripped.entities()[0].molecule_type(),
+        MoleculeType::Protein
+    );
+    assert_eq!(roundtripped.entities()[0].atom_count(), 4);
 }
 
 #[test]
@@ -218,17 +221,23 @@ fn test_assembly_bytes_single_atom_ion() {
     let entities = split_into_entities(&coords);
     let bytes = assembly_bytes(&entities).unwrap();
     let roundtripped = deserialize_assembly(&bytes).unwrap();
-    assert_eq!(roundtripped.len(), 1);
-    assert_eq!(roundtripped[0].molecule_type(), MoleculeType::Ion);
-    assert!((roundtripped[0].atom_set()[0].position.x - 5.5).abs() < 1e-6);
+    assert_eq!(roundtripped.entities().len(), 1);
+    assert_eq!(
+        roundtripped.entities()[0].molecule_type(),
+        MoleculeType::Ion
+    );
+    assert!(
+        (roundtripped.entities()[0].atom_set()[0].position.x - 5.5).abs()
+            < 1e-6
+    );
 }
 
 #[test]
 fn test_assembly_bytes_empty_entities() {
     let entities: Vec<MoleculeEntity> = Vec::new();
-    let bytes = serialize_assembly(&entities).unwrap();
+    let bytes = assembly_bytes(&entities).unwrap();
     let roundtripped = deserialize_assembly(&bytes).unwrap();
-    assert!(roundtripped.is_empty());
+    assert!(roundtripped.entities().is_empty());
 }
 
 #[test]
@@ -277,7 +286,7 @@ fn test_assembly_byte_layout() {
         elements: vec![Element::N, Element::C, Element::C, Element::O],
     };
     let entities = split_into_entities(&coords);
-    let bytes = serialize_assembly(&entities).unwrap();
+    let bytes = assembly_bytes(&entities).unwrap();
 
     // 8 magic + 4 count + 5 per-entity header + 4 atoms * 26 = 121.
     assert_eq!(&bytes[0..8], b"ASSEM01\0");

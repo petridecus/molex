@@ -3,6 +3,7 @@
 use super::{
     molecule_type_to_wire, Coords, CoordsError, ASSEMBLY_MAGIC, COORDS_MAGIC,
 };
+use crate::assembly::Assembly;
 use crate::entity::molecule::MoleculeEntity;
 
 /// Serialize `Coords` struct to COORDS01 binary format.
@@ -27,7 +28,11 @@ pub fn serialize(coords: &Coords) -> Result<Vec<u8>, CoordsError> {
     Ok(buffer)
 }
 
-/// Serialize a list of entities to ASSEM01 binary format.
+/// Serialize an [`Assembly`] to ASSEM01 binary format.
+///
+/// Writes the entity list only; derived fields (`ss_types`, `hbonds`,
+/// `cross_entity_bonds`, `generation`) are rebuilt by
+/// [`deserialize_assembly`] via [`Assembly::new`].
 ///
 /// Format:
 /// - 8 bytes: magic "ASSEM01\0"
@@ -47,6 +52,21 @@ pub fn serialize(coords: &Coords) -> Result<Vec<u8>, CoordsError> {
 ///
 /// Currently infallible but returns `Result` for API consistency.
 pub fn serialize_assembly(
+    assembly: &Assembly,
+) -> Result<Vec<u8>, CoordsError> {
+    serialize_entities(assembly.entities())
+}
+
+/// Serialize a raw entity slice to ASSEM01 binary format.
+///
+/// Internal helper for in-crate paths that operate on owned entity
+/// slices and don't need an [`Assembly`] wrapper.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "mirrors `serialize_assembly` which keeps the `Result` for \
+              API consistency"
+)]
+pub(crate) fn serialize_entities(
     entities: &[MoleculeEntity],
 ) -> Result<Vec<u8>, CoordsError> {
     let total_atoms: usize =

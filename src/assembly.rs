@@ -691,6 +691,67 @@ mod tests {
         );
     }
 
+    #[test]
+    fn coordinate_snapshot_skips_length_mismatch_but_applies_matching() {
+        let mut alloc = EntityIdAllocator::new();
+        let a = make_dipeptide(&mut alloc, b'A', Vec3::ZERO);
+        let b = make_dipeptide(&mut alloc, b'B', Vec3::new(20.0, 0.0, 0.0));
+        let a_id = a.id();
+        let b_id = b.id();
+        let b_original_pos = b.atom_set()[0].position;
+        let mut assembly = Assembly::new(vec![a, b]);
+        let gen_before = assembly.generation();
+
+        let a_count = assembly.entity(a_id).unwrap().atom_count();
+        let shifted_a: Vec<Vec3> =
+            (0..a_count).map(|i| Vec3::new(i as f32, 50.0, 0.0)).collect();
+        let too_short_b = vec![Vec3::ZERO];
+
+        let mut per_entity = HashMap::new();
+        let _ = per_entity.insert(a_id, shifted_a);
+        let _ = per_entity.insert(b_id, too_short_b);
+        assembly.set_coordinate_snapshot(CoordinateSnapshot::new(per_entity));
+
+        assert_eq!(assembly.generation(), gen_before + 1);
+        assert!(
+            (assembly.entity(a_id).unwrap().atom_set()[0].position
+                - Vec3::new(0.0, 50.0, 0.0))
+            .length()
+                < 1e-6
+        );
+        assert!(
+            (assembly.entity(b_id).unwrap().atom_set()[0].position
+                - b_original_pos)
+                .length()
+                < 1e-6
+        );
+    }
+
+    #[test]
+    fn coordinate_snapshot_with_unknown_ids_still_bumps_generation() {
+        let mut alloc = EntityIdAllocator::new();
+        let a = make_dipeptide(&mut alloc, b'A', Vec3::ZERO);
+        let a_id = a.id();
+        let original_pos = a.atom_set()[0].position;
+        let mut assembly = Assembly::new(vec![a]);
+        let gen_before = assembly.generation();
+
+        let mut other_alloc = EntityIdAllocator::new();
+        let unknown_id = other_alloc.from_raw(10_000);
+
+        let mut per_entity = HashMap::new();
+        let _ = per_entity.insert(unknown_id, vec![Vec3::ZERO; 9]);
+        assembly.set_coordinate_snapshot(CoordinateSnapshot::new(per_entity));
+
+        assert_eq!(assembly.generation(), gen_before + 1);
+        assert!(
+            (assembly.entity(a_id).unwrap().atom_set()[0].position
+                - original_pos)
+                .length()
+                < 1e-6
+        );
+    }
+
     // -- Byte-identity vs the legacy per-slice path (viso's Phase-3 gate) --
 
     /// On a real protein, `Assembly::ss_types` / `Assembly::hbonds`
@@ -700,9 +761,11 @@ mod tests {
     #[test]
     fn byte_identity_against_legacy_path_1ubq() {
         let path = Path::new("../viso/assets/models/1ubq.cif");
-        if !path.exists() {
-            return;
-        }
+        assert!(
+            path.exists(),
+            "byte-identity fixture missing at {}",
+            path.display(),
+        );
 
         let entities = structure_file_to_entities(path).unwrap();
         let protein = entities.iter().find_map(|e| e.as_protein()).unwrap();
@@ -720,7 +783,6 @@ mod tests {
             &detect_hbonds(&per_entity_backbone),
             per_entity_backbone.len(),
         );
-        let legacy_disulfides = detect_disulfides(&entities);
 
         // Assembly path:
         let assembly = Assembly::new(entities.clone());
@@ -734,10 +796,8 @@ mod tests {
             legacy_ss.as_slice(),
             "per-entity SS must match the legacy per-entity DSSP path"
         );
-        assert_eq!(
-            assembly.cross_entity_bonds(),
-            legacy_disulfides.as_slice(),
-            "cross-entity bonds must match the free-function detect_disulfides"
-        );
+        // Disulfide coverage lives in `disulfides_filtered_and_cross_bonds_populated`;
+        // asserting it here against `detect_disulfides` would be tautological
+        // because `Assembly::new` calls the same function internally.
     }
 }

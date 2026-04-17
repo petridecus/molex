@@ -4,10 +4,9 @@ use glam::{Mat3, Vec3};
 
 use super::extract::{centroid, extract_ca_positions};
 use crate::entity::molecule::MoleculeEntity;
-use crate::ops::codec::{
-    deserialize, deserialize_assembly, serialize, serialize_assembly,
-    CoordsError, ASSEMBLY_MAGIC,
-};
+use crate::ops::codec::deserialize::deserialize_assembly_entities;
+use crate::ops::codec::serialize::serialize_entities;
+use crate::ops::codec::{deserialize, serialize, CoordsError, ASSEMBLY_MAGIC};
 
 /// Kabsch algorithm: find optimal rotation and translation to align target to
 /// reference.
@@ -211,9 +210,10 @@ pub fn align_coords_bytes(
     reference_ca: &[Vec3],
 ) -> Result<Vec<u8>, CoordsError> {
     if coords_bytes.len() >= 8 && &coords_bytes[0..8] == ASSEMBLY_MAGIC {
-        let mut entities = deserialize_assembly(coords_bytes)?;
+        // Skip Assembly::new; we re-serialize without inspecting derived data.
+        let mut entities = deserialize_assembly_entities(coords_bytes)?;
         align_to_reference(&mut entities, reference_ca)?;
-        serialize_assembly(&entities)
+        serialize_entities(&entities)
     } else {
         // Plain COORDS path: deserialize, align via entity bridge, reserialize
         let coords = deserialize(coords_bytes)?;

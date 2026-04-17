@@ -3,10 +3,8 @@
 
 use glam::Vec3;
 
-use super::{
-    merge_entities, serialize_assembly, split_into_entities, Coords,
-    CoordsError,
-};
+use super::serialize::serialize_entities;
+use super::{merge_entities, split_into_entities, Coords, CoordsError};
 use crate::entity::molecule::id::EntityIdAllocator;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
 
@@ -21,7 +19,7 @@ pub fn protein_coords(entities: &[MoleculeEntity]) -> Coords {
     merge_entities(&proteins)
 }
 
-/// All entities serialized to ASSEM01 bytes (includes molecule type metadata).
+/// ASSEM01-encode a raw entity slice (includes molecule type metadata).
 ///
 /// # Errors
 ///
@@ -29,7 +27,7 @@ pub fn protein_coords(entities: &[MoleculeEntity]) -> Coords {
 pub fn assembly_bytes(
     entities: &[MoleculeEntity],
 ) -> Result<Vec<u8>, CoordsError> {
-    serialize_assembly(entities)
+    serialize_entities(entities)
 }
 
 /// CA positions from protein entities.

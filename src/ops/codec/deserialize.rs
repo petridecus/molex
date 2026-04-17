@@ -199,7 +199,12 @@ fn parse_entity_headers(
     Ok((headers, offset))
 }
 
-/// Deserialize ASSEM01 binary format back to a list of entities.
+/// Deserialize ASSEM01 binary format into an [`Assembly`] with
+/// derived data populated.
+///
+/// Runs [`Assembly::new`] over the decoded entities so callers see
+/// `ss_types`, `hbonds`, and `cross_entity_bonds` without a follow-up
+/// step.
 ///
 /// # Errors
 ///
@@ -207,7 +212,30 @@ fn parse_entity_headers(
 /// or atom data are malformed or truncated. Returns
 /// `CoordsError::SerializationError` if individual atom fields cannot be
 /// parsed.
+///
+/// [`Assembly`]: crate::Assembly
+/// [`Assembly::new`]: crate::Assembly::new
 pub fn deserialize_assembly(
+    bytes: &[u8],
+) -> Result<crate::Assembly, CoordsError> {
+    let entities = deserialize_assembly_entities(bytes)?;
+    Ok(crate::Assembly::new(entities))
+}
+
+/// Deserialize ASSEM01 bytes into a raw entity vec without building
+/// an [`Assembly`].
+///
+/// Internal helper for in-crate paths that mutate entities in place
+/// before re-serializing and don't need the derived-data recompute
+/// [`Assembly::new`] performs.
+///
+/// # Errors
+///
+/// Same as [`deserialize_assembly`].
+///
+/// [`Assembly`]: crate::Assembly
+/// [`Assembly::new`]: crate::Assembly::new
+pub(crate) fn deserialize_assembly_entities(
     bytes: &[u8],
 ) -> Result<Vec<MoleculeEntity>, CoordsError> {
     if bytes.len() < 12 {

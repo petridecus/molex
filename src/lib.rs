@@ -45,6 +45,10 @@ pub use atom_id::AtomId;
 pub use bond::CovalentBond;
 pub use element::Element;
 pub use entity::molecule::atom::Atom;
+#[allow(
+    deprecated,
+    reason = "legacy re-export; removed alongside ProteinResidue in Phase 5"
+)]
 pub use entity::molecule::protein::{
     ProteinResidue, ResidueBackbone, Sidechain,
 };

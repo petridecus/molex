@@ -8,8 +8,8 @@
 
 mod assembly;
 mod bridge;
-mod deserialize;
-mod serialize;
+pub(crate) mod deserialize;
+pub(crate) mod serialize;
 mod types;
 
 use crate::entity::molecule::MoleculeType;

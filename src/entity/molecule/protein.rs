@@ -76,6 +76,11 @@ impl Sidechain {
 ///
 /// Contains backbone (N, CA, C, O), sidechain (atoms + bonds), and
 /// residue metadata (name, number, chain).
+#[deprecated(
+    since = "0.3.0",
+    note = "REMOVE IN PHASE 5. Build per-residue views from \
+            entity.atoms + entity.residues directly."
+)]
 #[derive(Debug, Clone)]
 pub struct ProteinResidue {
     /// 3-character residue name (e.g. b"ALA").
@@ -255,7 +260,16 @@ impl ProteinEntity {
     }
 
     /// Derive full protein residues (backbone + sidechain).
+    #[deprecated(
+        since = "0.3.0",
+        note = "REMOVE IN PHASE 5. Build per-residue views from \
+                entity.atoms + entity.residues directly."
+    )]
     #[must_use]
+    #[allow(
+        deprecated,
+        reason = "returns the newly-deprecated ProteinResidue; deleted together"
+    )]
     pub fn to_protein_residues<F, G>(
         &self,
         is_hydrophobic: F,
@@ -292,6 +306,10 @@ impl ProteinEntity {
     /// residues as [`to_backbone()`](Self::to_backbone)). Glycine residues
     /// produce an empty `Sidechain`. Residues missing backbone atoms are
     /// skipped.
+    #[deprecated(
+        since = "0.3.0",
+        note = "REMOVE IN PHASE 5. No current caller."
+    )]
     #[must_use]
     pub fn to_sidechains<F, G>(
         &self,
