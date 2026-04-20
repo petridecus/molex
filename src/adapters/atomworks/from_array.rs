@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use super::{chain_type_id_to_molecule_type, mol_type_str_to_molecule_type};
+use crate::assembly::Assembly;
 use crate::element::Element;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
 use crate::ops::codec::{
@@ -213,7 +214,7 @@ pub fn atom_array_to_entities(
         .get_item(0)?
         .extract()?;
     if num_atoms == 0 {
-        return serialize_assembly(&[]).map_err(|e| {
+        return serialize_assembly(&Assembly::new(vec![])).map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
         });
     }
@@ -241,7 +242,7 @@ pub fn atom_array_to_entities(
         mol_type_arr.as_ref(),
     )?;
 
-    serialize_assembly(&entities).map_err(|e| {
+    serialize_assembly(&Assembly::new(entities)).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })
 }
@@ -348,11 +349,11 @@ pub fn atom_array_to_coords(
     atom_array: Py<PyAny>,
 ) -> PyResult<Vec<u8>> {
     let assembly_bytes = atom_array_to_entities(py, atom_array)?;
-    let entities = crate::ops::codec::deserialize_assembly(&assembly_bytes)
+    let assembly = crate::ops::codec::deserialize_assembly(&assembly_bytes)
         .map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
         })?;
-    let coords = crate::ops::codec::merge_entities(&entities);
+    let coords = crate::ops::codec::merge_entities(assembly.entities());
     crate::ops::codec::serialize(&coords).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })
@@ -372,9 +373,11 @@ pub fn atom_array_to_entity_vec(
 ) -> PyResult<Vec<MoleculeEntity>> {
     let atom_array_py: Py<PyAny> = atom_array.clone().unbind();
     let bytes = atom_array_to_entities(py, atom_array_py)?;
-    crate::ops::codec::deserialize_assembly(&bytes).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-    })
+    crate::ops::codec::deserialize_assembly(&bytes)
+        .map(|a| a.entities().to_vec())
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+        })
 }
 
 // ============================================================================

@@ -269,10 +269,10 @@ pub fn entities_to_atom_array(
     py: Python,
     assembly_bytes: Vec<u8>,
 ) -> PyResult<Py<PyAny>> {
-    let entities = deserialize_assembly(&assembly_bytes).map_err(|e| {
+    let assembly = deserialize_assembly(&assembly_bytes).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })?;
-    entities_to_atom_array_impl(py, &entities)
+    entities_to_atom_array_impl(py, assembly.entities())
 }
 
 /// Convert `Vec<MoleculeEntity>` (from ASSEM01 bytes) to an `AtomArrayPlus`.
@@ -291,10 +291,10 @@ pub fn entities_to_atom_array_plus(
     py: Python,
     assembly_bytes: Vec<u8>,
 ) -> PyResult<Py<PyAny>> {
-    let entities = deserialize_assembly(&assembly_bytes).map_err(|e| {
+    let assembly = deserialize_assembly(&assembly_bytes).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })?;
-    let atom_array = entities_to_atom_array_impl(py, &entities)?;
+    let atom_array = entities_to_atom_array_impl(py, assembly.entities())?;
     let as_plus = py
         .import("atomworks.io.utils.atom_array_plus")?
         .getattr("as_atom_array_plus")?;
