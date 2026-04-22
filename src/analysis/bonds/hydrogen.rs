@@ -33,13 +33,11 @@ pub struct HBond {
 ///
 /// Returns all donor-acceptor pairs with energy below the threshold,
 /// sorted by donor index then by energy (strongest first).
-#[deprecated(
-    since = "0.3.0",
-    note = "REMOVE IN PHASE 5. Use Assembly::new, which runs H-bond detection \
-            eagerly and exposes the result via Assembly::hbonds()."
-)]
+///
+/// Internal implementation detail of `Assembly`'s derived-data pipeline.
+/// External consumers read H-bonds via `Assembly::hbonds()`.
 #[must_use]
-pub fn detect_hbonds(residues: &[ResidueBackbone]) -> Vec<HBond> {
+pub(crate) fn detect_hbonds(residues: &[ResidueBackbone]) -> Vec<HBond> {
     let n = residues.len();
     if n < 2 {
         return Vec::new();
@@ -103,7 +101,7 @@ pub fn detect_hbonds(residues: &[ResidueBackbone]) -> Vec<HBond> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, deprecated)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

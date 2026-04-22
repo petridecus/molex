@@ -11,14 +11,7 @@ use std::collections::HashMap;
 use glam::Vec3;
 
 use crate::analysis::bonds::disulfide::detect_disulfides;
-#[allow(
-    deprecated,
-    reason = "Assembly is the replacement path; the free function stays as an \
-              implementation detail through Phase 4 and gets deleted in Phase \
-              5."
-)]
-use crate::analysis::bonds::hydrogen::detect_hbonds;
-use crate::analysis::bonds::hydrogen::HBond;
+use crate::analysis::bonds::hydrogen::{detect_hbonds, HBond};
 use crate::analysis::ss::dssp::classify;
 use crate::analysis::SSType;
 use crate::atom_id::AtomId;
@@ -329,12 +322,6 @@ fn other_endpoint(bond: &CovalentBond, atom: AtomId) -> Option<AtomId> {
     }
 }
 
-#[allow(
-    deprecated,
-    reason = "Assembly owns the per-entity DSSP recompute — it wraps the \
-              legacy detect_hbonds, which stays as the implementation detail \
-              until the final Phase 5 deletion."
-)]
 fn compute_per_entity_ss(
     entities: &[MoleculeEntity],
 ) -> HashMap<EntityId, Vec<SSType>> {
@@ -354,12 +341,6 @@ fn compute_per_entity_ss(
     out
 }
 
-#[allow(
-    deprecated,
-    reason = "Assembly owns the flat-backbone H-bond recompute — it wraps the \
-              legacy detect_hbonds, which stays as the implementation detail \
-              until the final Phase 5 deletion."
-)]
 fn compute_flat_hbonds(entities: &[MoleculeEntity]) -> Vec<HBond> {
     let mut flat = Vec::new();
     for entity in entities {
@@ -392,12 +373,7 @@ fn trimmed_atom_name(name: &[u8; 4]) -> &[u8] {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::float_cmp,
-    clippy::cast_precision_loss,
-    deprecated
-)]
+#[allow(clippy::unwrap_used, clippy::float_cmp, clippy::cast_precision_loss)]
 mod tests {
     use std::path::Path;
 
@@ -405,7 +381,6 @@ mod tests {
 
     use super::*;
     use crate::adapters::pdb::structure_file_to_entities;
-    use crate::analysis::bonds::disulfide::detect_disulfides;
     use crate::analysis::bonds::hydrogen::detect_hbonds;
     use crate::analysis::ss::dssp::classify;
     use crate::element::Element;
@@ -703,8 +678,9 @@ mod tests {
         let gen_before = assembly.generation();
 
         let a_count = assembly.entity(a_id).unwrap().atom_count();
-        let shifted_a: Vec<Vec3> =
-            (0..a_count).map(|i| Vec3::new(i as f32, 50.0, 0.0)).collect();
+        let shifted_a: Vec<Vec3> = (0..a_count)
+            .map(|i| Vec3::new(i as f32, 50.0, 0.0))
+            .collect();
         let too_short_b = vec![Vec3::ZERO];
 
         let mut per_entity = HashMap::new();
@@ -796,8 +772,9 @@ mod tests {
             legacy_ss.as_slice(),
             "per-entity SS must match the legacy per-entity DSSP path"
         );
-        // Disulfide coverage lives in `disulfides_filtered_and_cross_bonds_populated`;
-        // asserting it here against `detect_disulfides` would be tautological
+        // Disulfide coverage lives in
+        // `disulfides_filtered_and_cross_bonds_populated`; asserting it
+        // here against `detect_disulfides` would be tautological
         // because `Assembly::new` calls the same function internally.
     }
 }

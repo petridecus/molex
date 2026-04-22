@@ -482,9 +482,12 @@ mod tests {
         let entities =
             crate::adapters::pdb::structure_file_to_entities(path).unwrap();
 
-        let protein = entities.iter().find_map(|e| e.as_protein()).unwrap();
-
-        let ss = protein.detect_ss();
+        let protein_id =
+            entities.iter().find_map(|e| e.as_protein()).unwrap().id;
+        let assembly = crate::Assembly::new(entities);
+        let ss = crate::analysis::merge_short_segments(
+            assembly.ss_types(protein_id),
+        );
 
         // 76 residues: M1-G76. Ground truth from mkdssp 4.4.10 run on
         // our exact 1ubq.cif, converted to Q3 (H,G,I→H; E,B→E; else→C).
@@ -581,9 +584,12 @@ mod tests {
         let entities =
             crate::adapters::pdb::structure_file_to_entities(path).unwrap();
 
-        let protein = entities.iter().find_map(|e| e.as_protein()).unwrap();
-
-        let ss = protein.detect_ss();
+        let protein_id =
+            entities.iter().find_map(|e| e.as_protein()).unwrap().id;
+        let assembly = crate::Assembly::new(entities);
+        let ss = crate::analysis::merge_short_segments(
+            assembly.ss_types(protein_id),
+        );
 
         let helix_count = ss.iter().filter(|&&s| s == SSType::Helix).count();
         let helix_frac = f64::from(u32::try_from(helix_count).unwrap())

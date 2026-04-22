@@ -34,24 +34,13 @@ pub mod python;
 // ── Entity-first public API ─────────────────────────────────────────────
 // The most commonly used types, re-exported at the crate root.
 
-#[allow(
-    deprecated,
-    reason = "legacy re-export; removed in Phase 5 of assembly migration"
-)]
-pub use analysis::{detect_disulfide_bonds, DisulfideBond};
 pub use analysis::{detect_disulfides, BondOrder, HBond, SSType};
 pub use assembly::{Assembly, CoordinateSnapshot};
 pub use atom_id::AtomId;
 pub use bond::CovalentBond;
 pub use element::Element;
 pub use entity::molecule::atom::Atom;
-#[allow(
-    deprecated,
-    reason = "legacy re-export; removed alongside ProteinResidue in Phase 5"
-)]
-pub use entity::molecule::protein::{
-    ProteinResidue, ResidueBackbone, Sidechain,
-};
+pub use entity::molecule::protein::{ResidueBackbone, Sidechain};
 pub use entity::molecule::{MoleculeEntity, MoleculeType, NucleotideRing};
 pub use ops::codec::{Coords, CoordsAtom, CoordsError};
 #[cfg(feature = "python")]

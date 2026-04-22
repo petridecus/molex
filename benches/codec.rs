@@ -17,6 +17,7 @@ use molex::ops::codec::{
     deserialize, deserialize_assembly, merge_entities, serialize,
     serialize_assembly, split_into_entities, Coords, CoordsAtom,
 };
+use molex::Assembly;
 
 /// Build a synthetic Coords with `n` atoms across `n/5` ALA residues.
 fn make_coords(n_atoms: usize) -> Coords {
@@ -82,14 +83,14 @@ fn bench_assembly_roundtrip(c: &mut Criterion) {
 
     for n_atoms in [50, 500, 5000] {
         let coords = make_coords(n_atoms);
-        let entities = split_into_entities(&coords);
-        let bytes = serialize_assembly(&entities).unwrap();
+        let assembly = Assembly::new(split_into_entities(&coords));
+        let bytes = serialize_assembly(&assembly).unwrap();
 
         group.bench_with_input(
             BenchmarkId::new("serialize", format!("{n_atoms}_atoms")),
-            &entities,
-            |b, entities| {
-                b.iter(|| serialize_assembly(black_box(entities)).unwrap());
+            &assembly,
+            |b, assembly| {
+                b.iter(|| serialize_assembly(black_box(assembly)).unwrap());
             },
         );
 

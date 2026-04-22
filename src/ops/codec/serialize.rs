@@ -32,7 +32,8 @@ pub fn serialize(coords: &Coords) -> Result<Vec<u8>, CoordsError> {
 ///
 /// Writes the entity list only; derived fields (`ss_types`, `hbonds`,
 /// `cross_entity_bonds`, `generation`) are rebuilt by
-/// [`deserialize_assembly`] via [`Assembly::new`].
+/// [`deserialize_assembly`](super::deserialize::deserialize_assembly) via
+/// [`Assembly::new`].
 ///
 /// Format:
 /// - 8 bytes: magic "ASSEM01\0"
@@ -51,9 +52,7 @@ pub fn serialize(coords: &Coords) -> Result<Vec<u8>, CoordsError> {
 /// # Errors
 ///
 /// Currently infallible but returns `Result` for API consistency.
-pub fn serialize_assembly(
-    assembly: &Assembly,
-) -> Result<Vec<u8>, CoordsError> {
+pub fn serialize_assembly(assembly: &Assembly) -> Result<Vec<u8>, CoordsError> {
     serialize_entities(assembly.entities())
 }
 
@@ -63,8 +62,8 @@ pub fn serialize_assembly(
 /// slices and don't need an [`Assembly`] wrapper.
 #[allow(
     clippy::unnecessary_wraps,
-    reason = "mirrors `serialize_assembly` which keeps the `Result` for \
-              API consistency"
+    reason = "mirrors `serialize_assembly` which keeps the `Result` for API \
+              consistency"
 )]
 pub(crate) fn serialize_entities(
     entities: &[MoleculeEntity],

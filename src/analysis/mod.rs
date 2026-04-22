@@ -10,11 +10,6 @@ pub mod ss;
 pub mod volumetric;
 
 pub use aabb::Aabb;
-#[allow(
-    deprecated,
-    reason = "legacy re-export; removed in Phase 5 of assembly migration"
-)]
-pub use bonds::{detect_disulfide_bonds, detect_hbonds, DisulfideBond};
 pub use bonds::{
     detect_disulfides, infer_bonds, BondOrder, HBond, InferredBond,
     DEFAULT_TOLERANCE,
@@ -24,8 +19,6 @@ pub use volumetric::{
     detect_cavity_mask, edt_1d, edt_3d, voxelize_sas, DetectedCavity,
     ScalarVoxelGrid, VoxelBbox,
 };
-
-use crate::entity::molecule::protein::ResidueBackbone;
 
 /// Q3 secondary structure classification for a single residue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -48,57 +41,6 @@ impl SSType {
             SSType::Coil => [0.6, 0.85, 0.6],
         }
     }
-}
-
-/// Full DSSP analysis: detect H-bonds then classify secondary structure.
-///
-/// Returns both the SS assignments and the H-bond pairs that produced
-/// them. Use [`bonds::hydrogen::detect_hbonds`] directly if you only need
-/// H-bonds.
-#[deprecated(
-    since = "0.3.0",
-    note = "REMOVE IN PHASE 5. Use Assembly::new, which runs per-entity DSSP \
-            and flat-backbone H-bond detection eagerly; read results via \
-            Assembly::ss_types() and Assembly::hbonds()."
-)]
-#[must_use]
-#[allow(
-    deprecated,
-    reason = "calls newly-deprecated detect_hbonds; removed together in Phase \
-              5"
-)]
-pub fn detect_dssp(residues: &[ResidueBackbone]) -> (Vec<SSType>, Vec<HBond>) {
-    let hbonds = detect_hbonds(residues);
-    let ss = ss::classify(&hbonds, residues.len());
-    (ss, hbonds)
-}
-
-/// Resolve secondary structure with optional override.
-///
-/// If `override_ss` is provided, uses it directly (after merging short
-/// segments). Otherwise runs DSSP detection on the backbone residues.
-#[deprecated(
-    since = "0.3.0",
-    note = "REMOVE IN PHASE 5. Use Assembly::new and read Assembly::ss_types; \
-            SS overrides become a viso-side concern post-migration."
-)]
-#[must_use]
-#[allow(
-    deprecated,
-    reason = "calls newly-deprecated detect_dssp; removed together in Phase 5"
-)]
-pub fn resolve_ss(
-    override_ss: Option<&[SSType]>,
-    residues: &[ResidueBackbone],
-) -> Vec<SSType> {
-    let raw = override_ss.map_or_else(
-        || {
-            let (ss, _) = detect_dssp(residues);
-            ss
-        },
-        <[SSType]>::to_vec,
-    );
-    merge_short_segments(&raw)
 }
 
 /// Convert isolated 1-residue helix/sheet runs to Coil.

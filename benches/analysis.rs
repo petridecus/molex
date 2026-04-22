@@ -2,9 +2,6 @@
 #![allow(
     missing_docs,
     unused_results,
-    unused_imports,
-    unused_variables,
-    deprecated,
     clippy::unwrap_used,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -15,79 +12,7 @@ use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
 };
 use glam::Vec3;
-use molex::analysis::bonds::hydrogen::{detect_hbonds, HBond};
-use molex::analysis::ss::dssp::classify;
-use molex::entity::molecule::protein::ResidueBackbone;
 use molex::ops::transform::{extract_ca_positions, kabsch_alignment};
-
-/// Generate a synthetic alpha-helix backbone with `n` residues.
-/// Positions approximate ideal helix geometry (3.6 residues/turn, 1.5 Å rise).
-fn make_helix_backbone(n: usize) -> Vec<ResidueBackbone> {
-    (0..n)
-        .map(|i| {
-            let t = i as f32;
-            let angle = t * std::f32::consts::TAU / 3.6;
-            let rise = t * 1.5;
-            let r = 2.3; // helix radius
-
-            ResidueBackbone {
-                n: Vec3::new(r * angle.cos(), r * angle.sin(), rise),
-                ca: Vec3::new(
-                    r * (angle + 0.3).cos(),
-                    r * (angle + 0.3).sin(),
-                    rise + 0.5,
-                ),
-                c: Vec3::new(
-                    r * (angle + 0.6).cos(),
-                    r * (angle + 0.6).sin(),
-                    rise + 1.0,
-                ),
-                o: Vec3::new(
-                    (r + 1.2) * (angle + 0.6).cos(),
-                    (r + 1.2) * (angle + 0.6).sin(),
-                    rise + 1.0,
-                ),
-            }
-        })
-        .collect()
-}
-
-fn bench_hbond_detection(c: &mut Criterion) {
-    let mut group = c.benchmark_group("hbond_detection");
-
-    for n_residues in [20, 50, 100, 300] {
-        let backbone = make_helix_backbone(n_residues);
-
-        group.bench_with_input(
-            BenchmarkId::new("detect_hbonds", format!("{n_residues}_residues")),
-            &backbone,
-            |b, backbone| {
-                b.iter(|| detect_hbonds(black_box(backbone)));
-            },
-        );
-    }
-
-    group.finish();
-}
-
-fn bench_dssp_classification(c: &mut Criterion) {
-    let mut group = c.benchmark_group("dssp_classification");
-
-    for n_residues in [20, 50, 100, 300] {
-        let backbone = make_helix_backbone(n_residues);
-        let hbonds = detect_hbonds(&backbone);
-
-        group.bench_with_input(
-            BenchmarkId::new("classify", format!("{n_residues}_residues")),
-            &(hbonds.clone(), n_residues),
-            |b, (hbonds, n)| {
-                b.iter(|| classify(black_box(hbonds), black_box(*n)));
-            },
-        );
-    }
-
-    group.finish();
-}
 
 fn bench_kabsch_alignment(c: &mut Criterion) {
     let mut group = c.benchmark_group("kabsch_alignment");
@@ -165,11 +90,5 @@ fn bench_ca_extraction(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_hbond_detection,
-    bench_dssp_classification,
-    bench_kabsch_alignment,
-    bench_ca_extraction
-);
+criterion_group!(benches, bench_kabsch_alignment, bench_ca_extraction);
 criterion_main!(benches);

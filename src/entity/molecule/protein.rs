@@ -1,7 +1,7 @@
 //! Protein types and entity.
 //!
-//! Per-residue types (`ResidueBackbone`, `Sidechain`, `ProteinResidue`) and
-//! the `ProteinEntity` chain instance with segment break metadata.
+//! Per-residue types (`ResidueBackbone`, `Sidechain`) and the
+//! `ProteinEntity` chain instance with segment break metadata.
 
 use glam::Vec3;
 
@@ -72,29 +72,6 @@ impl Sidechain {
     }
 }
 
-/// Complete per-residue view of a protein entity.
-///
-/// Contains backbone (N, CA, C, O), sidechain (atoms + bonds), and
-/// residue metadata (name, number, chain).
-#[deprecated(
-    since = "0.3.0",
-    note = "REMOVE IN PHASE 5. Build per-residue views from \
-            entity.atoms + entity.residues directly."
-)]
-#[derive(Debug, Clone)]
-pub struct ProteinResidue {
-    /// 3-character residue name (e.g. b"ALA").
-    pub name: [u8; 3],
-    /// PDB residue sequence number.
-    pub number: i32,
-    /// PDB chain identifier byte.
-    pub pdb_chain_id: u8,
-    /// Backbone atom positions (N, CA, C, O).
-    pub backbone: ResidueBackbone,
-    /// Sidechain atoms and topology.
-    pub sidechain: Sidechain,
-}
-
 // ---------------------------------------------------------------------------
 // Protein entity
 // ---------------------------------------------------------------------------
@@ -104,9 +81,9 @@ pub struct ProteinResidue {
 /// Contains all atoms, residue metadata, and precomputed segment breaks
 /// (backbone gaps from missing residues, detected by C-N distance).
 ///
-/// Protein-specific derived views (`to_backbone`, `to_protein_residues`,
-/// `to_sidechains`) are available as methods. These derive from the
-/// underlying `atoms` + `residues` on each call — no cached copies.
+/// Protein-specific derived views (`to_backbone`) are available as methods.
+/// These derive from the underlying `atoms` + `residues` on each call — no
+/// cached copies.
 #[derive(Debug, Clone)]
 pub struct ProteinEntity {
     /// Unique entity identifier.
@@ -259,83 +236,6 @@ impl ProteinEntity {
             .collect()
     }
 
-    /// Derive full protein residues (backbone + sidechain).
-    #[deprecated(
-        since = "0.3.0",
-        note = "REMOVE IN PHASE 5. Build per-residue views from \
-                entity.atoms + entity.residues directly."
-    )]
-    #[must_use]
-    #[allow(
-        deprecated,
-        reason = "returns the newly-deprecated ProteinResidue; deleted together"
-    )]
-    pub fn to_protein_residues<F, G>(
-        &self,
-        is_hydrophobic: F,
-        get_bonds: G,
-    ) -> Vec<ProteinResidue>
-    where
-        F: Fn(&str) -> bool,
-        G: Fn(&str) -> Option<Vec<(&'static str, &'static str)>>,
-    {
-        self.residues
-            .iter()
-            .filter_map(|r| {
-                let backbone = extract_backbone_from_residue(&self.atoms, r)?;
-                let sidechain = extract_sidechain_from_residue(
-                    &self.atoms,
-                    r,
-                    &is_hydrophobic,
-                    &get_bonds,
-                );
-                Some(ProteinResidue {
-                    name: r.name,
-                    number: r.number,
-                    pdb_chain_id: self.pdb_chain_id,
-                    backbone,
-                    sidechain,
-                })
-            })
-            .collect()
-    }
-
-    /// Derive per-residue sidechains (atoms, bonds, hydrophobicity).
-    ///
-    /// Returns one [`Sidechain`] per residue that has backbone atoms (same
-    /// residues as [`to_backbone()`](Self::to_backbone)). Glycine residues
-    /// produce an empty `Sidechain`. Residues missing backbone atoms are
-    /// skipped.
-    #[deprecated(
-        since = "0.3.0",
-        note = "REMOVE IN PHASE 5. No current caller."
-    )]
-    #[must_use]
-    pub fn to_sidechains<F, G>(
-        &self,
-        is_hydrophobic: F,
-        get_bonds: G,
-    ) -> Vec<Sidechain>
-    where
-        F: Fn(&str) -> bool,
-        G: Fn(&str) -> Option<Vec<(&'static str, &'static str)>>,
-    {
-        self.residues
-            .iter()
-            .filter_map(|r| {
-                // Skip residues without complete backbone (same filter as
-                // to_backbone / to_protein_residues).
-                let _bb = extract_backbone_from_residue(&self.atoms, r)?;
-                Some(extract_sidechain_from_residue(
-                    &self.atoms,
-                    r,
-                    &is_hydrophobic,
-                    &get_bonds,
-                ))
-            })
-            .collect()
-    }
-
     /// N/CA/C interleaved positions per segment (for spline renderer).
     ///
     /// Each inner `Vec<Vec3>` is one continuous segment with atoms
@@ -359,36 +259,6 @@ impl ProteinEntity {
                 positions
             })
             .collect()
-    }
-
-    /// Classify secondary structure (DSSP) for each residue.
-    ///
-    /// Runs DSSP on the full backbone (all residues in the entity),
-    /// then merges short segments. Segment breaks are handled naturally
-    /// by the H-bond energy calculation — missing residues simply don't
-    /// form bonds. Returns one [`SSType`](crate::SSType) per residue
-    /// that has a complete backbone (same count as
-    /// [`to_backbone()`](Self::to_backbone)).
-    #[deprecated(
-        since = "0.3.0",
-        note = "REMOVE IN PHASE 5. Wrap the entity in an Assembly and read \
-                Assembly::ss_types(entity_id)."
-    )]
-    #[must_use]
-    #[allow(
-        deprecated,
-        reason = "delegates to newly-deprecated detect_dssp; removed together \
-                  in Phase 5"
-    )]
-    pub fn detect_ss(&self) -> Vec<crate::SSType> {
-        use crate::analysis::{detect_dssp, merge_short_segments};
-
-        let backbone = self.to_backbone();
-        if backbone.is_empty() {
-            return Vec::new();
-        }
-        let (ss, _) = detect_dssp(&backbone);
-        merge_short_segments(&ss)
     }
 }
 
@@ -685,66 +555,6 @@ fn extract_backbone_from_residue(
         o: find_atom_by_name(atoms, residue, "O")
             .or_else(|| find_atom_by_name(atoms, residue, "OXT"))?,
     })
-}
-
-/// Extract sidechain from a single residue.
-fn extract_sidechain_from_residue<F, G>(
-    atoms: &[Atom],
-    residue: &Residue,
-    is_hydrophobic: &F,
-    get_bonds: &G,
-) -> Sidechain
-where
-    F: Fn(&str) -> bool,
-    G: Fn(&str) -> Option<Vec<(&'static str, &'static str)>>,
-{
-    use std::collections::HashMap;
-
-    let res_name = std::str::from_utf8(&residue.name).unwrap_or("UNK").trim();
-
-    let mut sc_atoms: Vec<Atom> = Vec::new();
-    let mut name_to_local: HashMap<String, usize> = HashMap::new();
-
-    for idx in residue.atom_range.clone() {
-        let name = std::str::from_utf8(&atoms[idx].name).unwrap_or("").trim();
-        // Skip backbone and hydrogen atoms.
-        if matches!(name, "N" | "CA" | "C" | "O" | "OXT") || is_hydrogen(name) {
-            continue;
-        }
-        let local_idx = sc_atoms.len();
-        let _ = name_to_local.insert(name.to_owned(), local_idx);
-        sc_atoms.push(atoms[idx].clone());
-    }
-
-    let mut bonds = Vec::new();
-    if let Some(residue_bonds) = get_bonds(res_name) {
-        for (a1, a2) in residue_bonds {
-            let a1_str: &str = a1;
-            let a2_str: &str = a2;
-            if let (Some(&i1), Some(&i2)) =
-                (name_to_local.get(a1_str), name_to_local.get(a2_str))
-            {
-                bonds.push((i1, i2));
-            }
-        }
-    }
-
-    Sidechain {
-        atoms: sc_atoms,
-        bonds,
-        is_hydrophobic: is_hydrophobic(res_name),
-    }
-}
-
-/// Returns true if an atom name looks like a hydrogen atom.
-fn is_hydrogen(name: &str) -> bool {
-    name.starts_with('H')
-        || name.starts_with("1H")
-        || name.starts_with("2H")
-        || name.starts_with("3H")
-        || (name.len() >= 2
-            && name.as_bytes().first().is_some_and(u8::is_ascii_digit)
-            && name.as_bytes().get(1) == Some(&b'H'))
 }
 
 #[cfg(test)]
