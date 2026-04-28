@@ -5,16 +5,20 @@
 ```
 molex/src/
 ├── adapters/         File format parsers (PDB, mmCIF, BinaryCIF, MRC, DCD, AtomWorks)
-├── analysis/         Structural analysis (bonds, secondary structure, AABB)
-├── element.rs        Element enum (symbols, covalent radii, colors)
+├── analysis/         Structural analysis (bonds, secondary structure, AABB, volumetric)
+├── chemistry/        Static residue tables (amino acids, nucleotides, atom names)
 ├── entity/           Entity system
 │   ├── molecule/     MoleculeEntity enum + subtypes (protein, nucleic acid, small molecule, bulk)
 │   └── surface/      Surface types (VoxelGrid, Density)
 ├── ops/              Operations
 │   ├── codec/        Wire formats (COORDS01, ASSEM01), serialize/deserialize, split/merge
 │   └── transform/    Kabsch alignment, CA extraction, backbone segments
+├── assembly.rs       Top-level Assembly container with eagerly-computed derived data
+├── atom_id.rs        Cross-cutting AtomId (entity + index)
+├── bond.rs           Cross-cutting CovalentBond (AtomId endpoints)
+├── element.rs        Element enum (symbols, covalent radii, colors)
 ├── ffi.rs            C FFI bindings
-├── python.rs         PyO3 bindings
+├── python.rs         PyO3 bindings (feature = "python")
 └── lib.rs            Crate root, re-exports
 ```
 
@@ -27,6 +31,18 @@ Entities (`Vec<MoleculeEntity>`) are the primary data model.
 **Analysis** operates on `&[Atom]`, `&[ResidueBackbone]`, or `&[MoleculeEntity]`.
 
 **`Coords`** is a flat, column-oriented wire format for FFI and IPC (parallel arrays of x/y/z, chain IDs, residue names, etc.).
+
+## Assembly
+
+`Assembly` (in `src/assembly.rs`) is the host-owned structural source of truth. It bundles:
+
+- a `Vec<MoleculeEntity>`
+- cross-entity `CovalentBond`s (currently disulfides)
+- per-entity `SSType` arrays (DSSP)
+- backbone `HBond`s
+- a generation counter that bumps on every mutation
+
+Any `&mut Assembly` mutation (add/remove entity, update positions, restore from `CoordinateSnapshot`) recomputes all derived data before returning, so any snapshot a reader holds is internally consistent.
 
 ## Entity classification
 

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-056f3aa0.js";
+            window.path_to_searchindex_js = "../searchindex-04df7296.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-27f43c42.js"></script>
+        <script src="../toc-545e026b.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -225,20 +225,25 @@
 <p>A single protein chain. Implements both <code>Entity</code> and <code>Polymer</code> traits.</p>
 <pre><code class="language-rust ignore">pub struct ProteinEntity {
     pub id: EntityId,
-    pub atoms: Vec&lt;Atom&gt;,
+    pub atoms: Vec&lt;Atom&gt;,             // canonical order: N, CA, C, O, sidechain heavy..., H...
     pub residues: Vec&lt;Residue&gt;,       // name, number, atom_range
     pub segment_breaks: Vec&lt;usize&gt;,   // backbone gap indices
+    pub bonds: Vec&lt;CovalentBond&gt;,     // intra-entity bonds (AtomId endpoints)
     pub pdb_chain_id: u8,
 }</code></pre>
+<p>Construction (<code>ProteinEntity::new</code>) reorders atoms into the canonical per-residue layout, drops residues missing any of N/CA/C/O (OXT counts as the C-terminal oxygen), computes segment breaks from C(i)-&gt;N(i+1) distance &gt; 2.0 Å, and populates <code>bonds</code> from the <code>AminoAcid</code> chemistry tables plus universal backbone bonds (N-CA, CA-C, C=O) and inter-residue peptide bonds C(i)-N(i+1).</p>
 <p>Derived views (computed on each call, not cached):</p>
 <ul>
 <li><code>to_backbone() -&gt; Vec&lt;ResidueBackbone&gt;</code> – N, CA, C, O positions per residue</li>
-<li><code>to_protein_residues(is_hydrophobic, get_bonds) -&gt; Vec&lt;ProteinResidue&gt;</code> – full residue view with sidechain atoms and bond topology</li>
 <li><code>to_interleaved_segments() -&gt; Vec&lt;Vec&lt;Vec3&gt;&gt;</code> – N/CA/C positions per continuous segment (for spline rendering)</li>
 </ul>
-<p>Segment breaks are computed automatically from C(i)-&gt;N(i+1) distance &gt; 2.0 angstroms.</p>
+<p>Bond filters:</p>
+<ul>
+<li><code>backbone_bonds()</code> – iterator of bonds whose endpoints both fall inside the canonical backbone region of any residue (offsets 0..4)</li>
+<li><code>sidechain_bonds()</code> – iterator of bonds with at least one heavy-atom sidechain endpoint</li>
+</ul>
 <h2 id="naentity"><a class="header" href="#naentity">NAEntity</a></h2>
-<p>A single DNA or RNA chain. Same structure as <code>ProteinEntity</code> (atoms, residues, segment breaks, chain ID). Implements <code>Entity</code> and <code>Polymer</code>.</p>
+<p>A single DNA or RNA chain. Same structure as <code>ProteinEntity</code> (atoms, residues, segment breaks, intra-entity <code>bonds</code>, chain ID). Implements <code>Entity</code> and <code>Polymer</code>.</p>
 <h2 id="smallmoleculeentity"><a class="header" href="#smallmoleculeentity">SmallMoleculeEntity</a></h2>
 <p>A single non-polymer molecule (ligand, ion, cofactor, lipid). Implements <code>Entity</code> only.</p>
 <h2 id="bulkentity"><a class="header" href="#bulkentity">BulkEntity</a></h2>
@@ -277,7 +282,7 @@ pub trait Polymer: Entity {
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../modules/adapters.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../modules/assembly.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -291,7 +296,7 @@ pub trait Polymer: Entity {
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../modules/adapters.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../modules/assembly.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -304,22 +309,6 @@ pub trait Polymer: Entity {
         <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
         <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
 
-        <!-- Livereload script (if served using the cli tool) -->
-        <script>
-            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
-            const socket = new WebSocket(wsAddress);
-            socket.onmessage = function (event) {
-                if (event.data === "reload") {
-                    socket.close();
-                    location.reload();
-                }
-            };
-
-            window.onbeforeunload = function() {
-                socket.close();
-            }
-        </script>
 
 
         <script>

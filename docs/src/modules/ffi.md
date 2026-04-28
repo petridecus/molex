@@ -39,20 +39,6 @@ Deserialize and re-serialize COORDS bytes (round-trip validation).
 CoordsResult coords_from_coords(const uint8_t *coords_ptr, size_t coords_len);
 ```
 
-### `coords_from_backbone`
-
-Build COORDS from backbone positions. Currently returns an error (not yet implemented).
-
-```c
-CoordsResult coords_from_backbone(
-    const float *positions,
-    size_t num_res,
-    const char *sequence,
-    const int32_t *chain_breaks,
-    size_t chain_break_count
-);
-```
-
 ## Memory management
 
 ```c

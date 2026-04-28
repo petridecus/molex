@@ -62,24 +62,29 @@ A single protein chain. Implements both `Entity` and `Polymer` traits.
 ```rust,ignore
 pub struct ProteinEntity {
     pub id: EntityId,
-    pub atoms: Vec<Atom>,
+    pub atoms: Vec<Atom>,             // canonical order: N, CA, C, O, sidechain heavy..., H...
     pub residues: Vec<Residue>,       // name, number, atom_range
     pub segment_breaks: Vec<usize>,   // backbone gap indices
+    pub bonds: Vec<CovalentBond>,     // intra-entity bonds (AtomId endpoints)
     pub pdb_chain_id: u8,
 }
 ```
 
+Construction (`ProteinEntity::new`) reorders atoms into the canonical per-residue layout, drops residues missing any of N/CA/C/O (OXT counts as the C-terminal oxygen), computes segment breaks from C(i)->N(i+1) distance > 2.0 Å, and populates `bonds` from the `AminoAcid` chemistry tables plus universal backbone bonds (N-CA, CA-C, C=O) and inter-residue peptide bonds C(i)-N(i+1).
+
 Derived views (computed on each call, not cached):
 
 - `to_backbone() -> Vec<ResidueBackbone>` -- N, CA, C, O positions per residue
-- `to_protein_residues(is_hydrophobic, get_bonds) -> Vec<ProteinResidue>` -- full residue view with sidechain atoms and bond topology
 - `to_interleaved_segments() -> Vec<Vec<Vec3>>` -- N/CA/C positions per continuous segment (for spline rendering)
 
-Segment breaks are computed automatically from C(i)->N(i+1) distance > 2.0 angstroms.
+Bond filters:
+
+- `backbone_bonds()` -- iterator of bonds whose endpoints both fall inside the canonical backbone region of any residue (offsets 0..4)
+- `sidechain_bonds()` -- iterator of bonds with at least one heavy-atom sidechain endpoint
 
 ## NAEntity
 
-A single DNA or RNA chain. Same structure as `ProteinEntity` (atoms, residues, segment breaks, chain ID). Implements `Entity` and `Polymer`.
+A single DNA or RNA chain. Same structure as `ProteinEntity` (atoms, residues, segment breaks, intra-entity `bonds`, chain ID). Implements `Entity` and `Polymer`.
 
 ## SmallMoleculeEntity
 

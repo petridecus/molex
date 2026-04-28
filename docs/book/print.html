@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-056f3aa0.js";
+            window.path_to_searchindex_js = "searchindex-04df7296.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-27f43c42.js"></script>
+        <script src="toc-545e026b.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -186,13 +186,19 @@
 <p><strong><code>MoleculeEntity</code></strong> represents a single molecule: a protein chain, a DNA/RNA strand, a ligand, an ion, or a group of waters. Parsing a structure file produces a <code>Vec&lt;MoleculeEntity&gt;</code>.</p>
 </li>
 <li>
+<p><strong><code>Assembly</code></strong> is the top-level host container: it owns the entities, cross-entity bonds (disulfides), per-entity DSSP secondary structure, and backbone H-bonds, with a generation counter that increments on every mutation.</p>
+</li>
+<li>
 <p><strong><code>Atom</code></strong> holds a position, element, atom name, occupancy, and B-factor. Residue and chain context live on the entity that contains the atom.</p>
 </li>
 <li>
-<p><strong><code>Coords</code></strong> is a binary serialization format used for FFI and IPC (e.g. iceoryx zero-copy between processes).</p>
+<p><strong><code>AtomId</code></strong> and <strong><code>CovalentBond</code></strong> are the cross-cutting identifiers: bonds reference atoms by <code>AtomId { entity, index }</code> so they remain addressable across reorderings.</p>
 </li>
 <li>
-<p><strong>Analysis</strong> includes covalent bond inference, DSSP hydrogen bond detection, disulfide bridges, and secondary structure classification.</p>
+<p><strong><code>Coords</code></strong> is a flat binary serialization format used for FFI and IPC. <strong><code>ASSEM01</code></strong> is the entity-aware counterpart that round-trips molecule type metadata.</p>
+</li>
+<li>
+<p><strong>Analysis</strong> includes covalent bond inference, DSSP hydrogen bond detection, disulfide bridges, secondary structure classification, AABBs, and volumetric/SES utilities.</p>
 </li>
 <li>
 <p><strong><code>VoxelGrid</code></strong> and <strong><code>Density</code></strong> represent 3D volumetric data (electron density, cryo-EM maps).</p>
@@ -285,13 +291,16 @@ for entity in &amp;proteins {
     );
 }</code></pre>
 <h2 id="run-dssp-secondary-structure-assignment"><a class="header" href="#run-dssp-secondary-structure-assignment">Run DSSP secondary structure assignment</a></h2>
-<pre><code class="language-rust ignore">use molex::analysis::{detect_dssp, SSType};
+<p>DSSP and backbone H-bond detection are run automatically when you build an <code>Assembly</code>:</p>
+<pre><code class="language-rust ignore">use molex::{Assembly, SSType};
 
-let protein = entities[0].as_protein().unwrap();
-let backbone = protein.to_backbone();
-let (ss_types, hbonds) = detect_dssp(&amp;backbone);
-for (i, ss) in ss_types.iter().enumerate() {
+let assembly = Assembly::new(entities);
+let protein_id = assembly.entities()[0].id();
+for (i, ss) in assembly.ss_types(protein_id).iter().enumerate() {
     println!("Residue {}: {:?}", i, ss); // Helix, Sheet, or Coil
+}
+for hb in assembly.hbonds() {
+    println!("donor {} -&gt; acceptor {} (E = {} kcal/mol)", hb.donor, hb.acceptor, hb.energy);
 }</code></pre>
 <h2 id="serialize-to-coords-binary-for-ffiipc"><a class="header" href="#serialize-to-coords-binary-for-ffiipc">Serialize to COORDS binary (for FFI/IPC)</a></h2>
 <pre><code class="language-rust ignore">use molex::ops::codec::{serialize, merge_entities};
@@ -315,16 +324,20 @@ assembly_bytes = molex.atom_array_to_entities(atom_array)
 <h2 id="module-layout"><a class="header" href="#module-layout">Module layout</a></h2>
 <pre><code>molex/src/
 ├── adapters/         File format parsers (PDB, mmCIF, BinaryCIF, MRC, DCD, AtomWorks)
-├── analysis/         Structural analysis (bonds, secondary structure, AABB)
-├── element.rs        Element enum (symbols, covalent radii, colors)
+├── analysis/         Structural analysis (bonds, secondary structure, AABB, volumetric)
+├── chemistry/        Static residue tables (amino acids, nucleotides, atom names)
 ├── entity/           Entity system
 │   ├── molecule/     MoleculeEntity enum + subtypes (protein, nucleic acid, small molecule, bulk)
 │   └── surface/      Surface types (VoxelGrid, Density)
 ├── ops/              Operations
 │   ├── codec/        Wire formats (COORDS01, ASSEM01), serialize/deserialize, split/merge
 │   └── transform/    Kabsch alignment, CA extraction, backbone segments
+├── assembly.rs       Top-level Assembly container with eagerly-computed derived data
+├── atom_id.rs        Cross-cutting AtomId (entity + index)
+├── bond.rs           Cross-cutting CovalentBond (AtomId endpoints)
+├── element.rs        Element enum (symbols, covalent radii, colors)
 ├── ffi.rs            C FFI bindings
-├── python.rs         PyO3 bindings
+├── python.rs         PyO3 bindings (feature = "python")
 └── lib.rs            Crate root, re-exports
 </code></pre>
 <h2 id="entity-first-design"><a class="header" href="#entity-first-design">Entity-first design</a></h2>
@@ -332,6 +345,16 @@ assembly_bytes = molex.atom_array_to_entities(atom_array)
 <p><strong>Adapters</strong> parse files into entities. The <code>*_to_entities</code> functions are the primary API. The <code>*_to_coords</code> functions parse to entities, then flatten to <code>Coords</code> via <code>merge_entities</code>.</p>
 <p><strong>Analysis</strong> operates on <code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>, or <code>&amp;[MoleculeEntity]</code>.</p>
 <p><strong><code>Coords</code></strong> is a flat, column-oriented wire format for FFI and IPC (parallel arrays of x/y/z, chain IDs, residue names, etc.).</p>
+<h2 id="assembly"><a class="header" href="#assembly">Assembly</a></h2>
+<p><code>Assembly</code> (in <code>src/assembly.rs</code>) is the host-owned structural source of truth. It bundles:</p>
+<ul>
+<li>a <code>Vec&lt;MoleculeEntity&gt;</code></li>
+<li>cross-entity <code>CovalentBond</code>s (currently disulfides)</li>
+<li>per-entity <code>SSType</code> arrays (DSSP)</li>
+<li>backbone <code>HBond</code>s</li>
+<li>a generation counter that bumps on every mutation</li>
+</ul>
+<p>Any <code>&amp;mut Assembly</code> mutation (add/remove entity, update positions, restore from <code>CoordinateSnapshot</code>) recomputes all derived data before returning, so any snapshot a reader holds is internally consistent.</p>
 <h2 id="entity-classification"><a class="header" href="#entity-classification">Entity classification</a></h2>
 <p>When a file is parsed, atoms are grouped into entities by chain ID, residue name, and molecule type. The <code>classify_residue</code> function maps 3-letter residue codes to <code>MoleculeType</code> values using lookup tables:</p>
 <div class="table-wrapper">
@@ -380,16 +403,15 @@ Polymer trait  -- residues(), segment_breaks(), segment_count(), segment_range()
 <h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
 <pre><code>                       ┌──────────────┐
  PDB / mmCIF / BCIF ──&gt;│              ├──&gt; Vec&lt;MoleculeEntity&gt;
- MRC / CCP4         ──&gt;│   Adapters   ├──&gt; Density (SurfaceEntity)
+ MRC / CCP4         ──&gt;│   Adapters   ├──&gt; Density (wraps VoxelGrid)
  DCD                ──&gt;│              ├──&gt; Vec&lt;DcdFrame&gt;
                        └──────┬───────┘
                               │
                               v
                   ┌───────────────────────┐
-                  │       Entities        │
-                  │                       │
-                  │  MoleculeEntity       │
-                  │  SurfaceEntity        │
+                  │       Assembly        │
+                  │  (entities + derived: │
+                  │   ss, hbonds, S-S)    │
                   └──┬────────┬────────┬──┘
                      │        │        │
                      v        v        v
@@ -424,12 +446,21 @@ let frames = dcd_file_to_frames(Path::new("trajectory.dcd"))?;</code></pre>
 </ol>
 <p>Each entity gets a unique <code>EntityId</code>.</p>
 <h2 id="3-analysis"><a class="header" href="#3-analysis">3. Analysis</a></h2>
-<pre><code class="language-rust ignore">let (ss_types, hbonds) = detect_dssp(&amp;backbone_residues);
-let bonds = infer_bonds(&amp;atoms, DEFAULT_TOLERANCE);
-let disulfides = detect_disulfide_bonds(&amp;atoms);
-let aabb = entity.aabb();</code></pre>
+<pre><code class="language-rust ignore">use molex::{detect_disulfides, Assembly};
+use molex::analysis::{infer_bonds, DEFAULT_TOLERANCE};
+
+// Top-level pipeline: build an Assembly to get DSSP, H-bonds,
+// and cross-entity disulfides eagerly computed and kept in sync.
+let assembly = Assembly::new(entities);
+let hbonds = assembly.hbonds();
+let ss     = assembly.ss_types(entity_id);
+
+// Or call the building blocks directly:
+let bonds      = infer_bonds(atoms, DEFAULT_TOLERANCE);   // distance-based
+let disulfides = detect_disulfides(&amp;entities);             // CYS SG-SG
+let aabb       = entity.aabb();</code></pre>
 <h2 id="4-transforms"><a class="header" href="#4-transforms">4. Transforms</a></h2>
-<pre><code class="language-rust ignore">let (rotation, translation) = kabsch_alignment(&amp;reference_ca, &amp;target_ca);
+<pre><code class="language-rust ignore">let (rotation, translation) = kabsch_alignment(&amp;reference_ca, &amp;target_ca)?;
 transform_entities(&amp;mut entities, rotation, translation);
 let ca_positions = extract_ca_positions(&amp;entities);</code></pre>
 <h2 id="5-serialization"><a class="header" href="#5-serialization">5. Serialization</a></h2>
@@ -488,20 +519,25 @@ let bytes = serialize_assembly(&amp;entities)?;</code></pre>
 <p>A single protein chain. Implements both <code>Entity</code> and <code>Polymer</code> traits.</p>
 <pre><code class="language-rust ignore">pub struct ProteinEntity {
     pub id: EntityId,
-    pub atoms: Vec&lt;Atom&gt;,
+    pub atoms: Vec&lt;Atom&gt;,             // canonical order: N, CA, C, O, sidechain heavy..., H...
     pub residues: Vec&lt;Residue&gt;,       // name, number, atom_range
     pub segment_breaks: Vec&lt;usize&gt;,   // backbone gap indices
+    pub bonds: Vec&lt;CovalentBond&gt;,     // intra-entity bonds (AtomId endpoints)
     pub pdb_chain_id: u8,
 }</code></pre>
+<p>Construction (<code>ProteinEntity::new</code>) reorders atoms into the canonical per-residue layout, drops residues missing any of N/CA/C/O (OXT counts as the C-terminal oxygen), computes segment breaks from C(i)-&gt;N(i+1) distance &gt; 2.0 Å, and populates <code>bonds</code> from the <code>AminoAcid</code> chemistry tables plus universal backbone bonds (N-CA, CA-C, C=O) and inter-residue peptide bonds C(i)-N(i+1).</p>
 <p>Derived views (computed on each call, not cached):</p>
 <ul>
 <li><code>to_backbone() -&gt; Vec&lt;ResidueBackbone&gt;</code> – N, CA, C, O positions per residue</li>
-<li><code>to_protein_residues(is_hydrophobic, get_bonds) -&gt; Vec&lt;ProteinResidue&gt;</code> – full residue view with sidechain atoms and bond topology</li>
 <li><code>to_interleaved_segments() -&gt; Vec&lt;Vec&lt;Vec3&gt;&gt;</code> – N/CA/C positions per continuous segment (for spline rendering)</li>
 </ul>
-<p>Segment breaks are computed automatically from C(i)-&gt;N(i+1) distance &gt; 2.0 angstroms.</p>
+<p>Bond filters:</p>
+<ul>
+<li><code>backbone_bonds()</code> – iterator of bonds whose endpoints both fall inside the canonical backbone region of any residue (offsets 0..4)</li>
+<li><code>sidechain_bonds()</code> – iterator of bonds with at least one heavy-atom sidechain endpoint</li>
+</ul>
 <h2 id="naentity"><a class="header" href="#naentity">NAEntity</a></h2>
-<p>A single DNA or RNA chain. Same structure as <code>ProteinEntity</code> (atoms, residues, segment breaks, chain ID). Implements <code>Entity</code> and <code>Polymer</code>.</p>
+<p>A single DNA or RNA chain. Same structure as <code>ProteinEntity</code> (atoms, residues, segment breaks, intra-entity <code>bonds</code>, chain ID). Implements <code>Entity</code> and <code>Polymer</code>.</p>
 <h2 id="smallmoleculeentity"><a class="header" href="#smallmoleculeentity">SmallMoleculeEntity</a></h2>
 <p>A single non-polymer molecule (ligand, ion, cofactor, lipid). Implements <code>Entity</code> only.</p>
 <h2 id="bulkentity"><a class="header" href="#bulkentity">BulkEntity</a></h2>
@@ -531,6 +567,49 @@ pub trait Polymer: Entity {
 <li><strong><code>VoxelGrid</code></strong> – 3D <code>Array3&lt;f32&gt;</code> grid with unit cell metadata (dimensions, angles, origin, sampling intervals). Provides <code>voxel_size()</code> and <code>frac_to_cart_matrix()</code> for coordinate conversion.</li>
 <li><strong><code>Density</code></strong> – wraps <code>VoxelGrid</code> with density map metadata. Constructed by <code>mrc_file_to_density()</code> or <code>mrc_to_density()</code>.</li>
 </ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="assembly-1"><a class="header" href="#assembly-1">Assembly</a></h1>
+<p><code>Assembly</code> (source: <code>src/assembly.rs</code>) is the host-owned structural source of truth. It bundles a <code>Vec&lt;MoleculeEntity&gt;</code> with eagerly-computed derived data:</p>
+<ul>
+<li>per-entity DSSP secondary structure (<code>ss_types</code>)</li>
+<li>backbone H-bonds (Kabsch-Sander)</li>
+<li>cross-entity covalent bonds (currently disulfides)</li>
+<li>a monotonic <code>generation</code> counter</li>
+</ul>
+<p>Every <code>&amp;mut Assembly</code> mutation bumps <code>generation</code> and recomputes the full derived-data set before returning, so any consumer holding a snapshot sees consistent state.</p>
+<pre><code class="language-rust ignore">use molex::{Assembly, CoordinateSnapshot};
+
+let assembly = Assembly::new(entities); // runs disulfide + DSSP + H-bond detection</code></pre>
+<h2 id="read-accessors"><a class="header" href="#read-accessors">Read accessors</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Returns</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>entities()</code></td><td><code>&amp;[MoleculeEntity]</code></td><td>All entities in declaration order</td></tr>
+<tr><td><code>entity(id)</code></td><td><code>Option&lt;&amp;MoleculeEntity&gt;</code></td><td>Look up an entity by id</td></tr>
+<tr><td><code>generation()</code></td><td><code>u64</code></td><td>Monotonic counter, bumps on mutation</td></tr>
+<tr><td><code>hbonds()</code></td><td><code>&amp;[HBond]</code></td><td>Backbone H-bonds across all proteins (flat sequence)</td></tr>
+<tr><td><code>ss_types(id)</code></td><td><code>&amp;[SSType]</code></td><td>DSSP classification per residue for an entity</td></tr>
+<tr><td><code>cross_entity_bonds()</code></td><td><code>&amp;[CovalentBond]</code></td><td>Cross-entity bonds (disulfides today)</td></tr>
+<tr><td><code>bonds_touching(atom)</code></td><td><code>impl Iterator&lt;Item=AtomId&gt;</code></td><td>Far endpoints of bonds touching <code>atom</code> (intra + cross)</td></tr>
+<tr><td><code>disulfides()</code></td><td><code>impl Iterator&lt;Item=&amp;CovalentBond&gt;</code></td><td>CYS SG-SG cross-entity bonds</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="mutations"><a class="header" href="#mutations">Mutations</a></h2>
+<p>All mutations recompute derived data:</p>
+<pre><code class="language-rust ignore">assembly.add_entity(new_entity);
+assembly.remove_entity(entity_id);
+assembly.update_positions(entity_id, &amp;new_coords);   // skipped if atom counts mismatch
+assembly.set_coordinate_snapshot(snapshot);          // bulk position update</code></pre>
+<h2 id="coordinatesnapshot"><a class="header" href="#coordinatesnapshot">CoordinateSnapshot</a></h2>
+<p><code>CoordinateSnapshot</code> captures per-entity positions for a “save / restore” workflow:</p>
+<pre><code class="language-rust ignore">let saved = CoordinateSnapshot::from_assembly(&amp;assembly);
+// ... run mutations ...
+assembly.set_coordinate_snapshot(saved); // restore</code></pre>
+<p>Entities present in the snapshot but missing from the assembly are ignored; entities in the assembly missing from the snapshot keep their current positions.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="adapters"><a class="header" href="#adapters">Adapters</a></h1>
 <p>Format adapters live in <code>molex::adapters</code> (source: <code>src/adapters/</code>). Each adapter’s primary API returns <code>Vec&lt;MoleculeEntity&gt;</code>. Coords-based variants are available for FFI/IPC consumers.</p>
@@ -589,44 +668,45 @@ coords_to_atom_array_plus(py: Python, coords_bytes: Vec&lt;u8&gt;) -&gt; PyResul
 atom_array_to_coords(atom_array: PyObject) -&gt; PyResult&lt;Vec&lt;u8&gt;&gt;</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="analysis"><a class="header" href="#analysis">Analysis</a></h1>
-<p>Structural analysis lives in <code>molex::analysis</code> (source: <code>src/analysis/</code>). All analysis functions operate on entity-level types (<code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>).</p>
+<p>Structural analysis lives in <code>molex::analysis</code> (source: <code>src/analysis/</code>). Most analysis functions operate on entity-level types (<code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>, <code>&amp;[MoleculeEntity]</code>).</p>
+<p>The eagerly-computed pipeline (DSSP secondary structure + backbone H-bonds + disulfides) is exposed through <a href="#architecture-overview"><code>Assembly</code></a> — see <code>Assembly::ss_types</code>, <code>Assembly::hbonds</code>, and <code>Assembly::disulfides</code>. The standalone functions documented below are the building blocks underneath.</p>
 <h2 id="secondary-structure-analysisss"><a class="header" href="#secondary-structure-analysisss">Secondary structure (<code>analysis::ss</code>)</a></h2>
 <p>DSSP-based secondary structure classification.</p>
-<pre><code class="language-rust ignore">use molex::analysis::{detect_dssp, resolve_ss, SSType};
+<pre><code class="language-rust ignore">use molex::analysis::ss::{classify, from_string};
+use molex::analysis::{HBond, SSType};
 
-// Full DSSP: detect H-bonds, then classify
-let (ss_types, hbonds) = detect_dssp(&amp;backbone_residues);
-// ss_types: Vec&lt;SSType&gt; -- one per residue (Helix, Sheet, or Coil)
-// hbonds: Vec&lt;HBond&gt; -- backbone H-bond pairs that produced the assignment
+// Classify residues from a precomputed H-bond list.
+let ss_types: Vec&lt;SSType&gt; = classify(&amp;hbonds, n_residues);
 
-// With optional override (e.g. from mmCIF annotation)
-let ss = resolve_ss(Some(&amp;override_ss), &amp;backbone_residues);
-// Falls back to DSSP if override is None</code></pre>
+// Parse a secondary-structure string like "HHHCCCEEE" into Vec&lt;SSType&gt;.
+let ss_types = from_string("HHHCCCEEE");</code></pre>
 <p><code>SSType</code> is a Q3 classification:</p>
 <pre><code class="language-rust ignore">pub enum SSType { Helix, Sheet, Coil }</code></pre>
 <p>Each variant has a <code>.color()</code> method returning an RGB <code>[f32; 3]</code> for rendering.</p>
-<p>Short isolated segments (1-residue helix/sheet runs) are automatically merged to <code>Coil</code> by <code>merge_short_segments</code>.</p>
-<h3 id="ss-from-string"><a class="header" href="#ss-from-string">SS from string</a></h3>
-<p><code>analysis::ss::from_string</code> parses secondary structure strings (e.g. <code>"HHHCCCEEE"</code>) into <code>Vec&lt;SSType&gt;</code>.</p>
+<p><code>analysis::merge_short_segments</code> converts isolated 1-residue helix/sheet runs to <code>Coil</code>.</p>
+<p>For most callers the recommended path is to construct an <code>Assembly</code> and read <code>assembly.ss_types(entity_id)</code> — the assembly internally runs H-bond detection and <code>classify</code> for every protein entity.</p>
 <h2 id="bond-detection-analysisbonds"><a class="header" href="#bond-detection-analysisbonds">Bond detection (<code>analysis::bonds</code>)</a></h2>
-<h3 id="covalent-bonds"><a class="header" href="#covalent-bonds">Covalent bonds</a></h3>
+<h3 id="covalent-bonds-distance-based"><a class="header" href="#covalent-bonds-distance-based">Covalent bonds (distance-based)</a></h3>
 <pre><code class="language-rust ignore">use molex::analysis::{infer_bonds, InferredBond, BondOrder, DEFAULT_TOLERANCE};
 
-let bonds: Vec&lt;InferredBond&gt; = infer_bonds(atoms, tolerance);
+let bonds: Vec&lt;InferredBond&gt; = infer_bonds(atoms, DEFAULT_TOLERANCE);
 // InferredBond { atom_a: usize, atom_b: usize, order: BondOrder }
 // BondOrder: Single, Double, Triple, Aromatic</code></pre>
-<p>Distance-based inference using element covalent radii with a configurable tolerance (default: <code>DEFAULT_TOLERANCE</code>).</p>
+<p>Distance-based inference using element covalent radii with a configurable tolerance. Used for ligands and other non-protein entities where bond topology isn’t supplied by a chemistry table. Protein and nucleic-acid bonds are populated from the chemistry tables at entity construction time and live on <code>ProteinEntity::bonds</code> / <code>NAEntity::bonds</code>.</p>
 <h3 id="hydrogen-bonds"><a class="header" href="#hydrogen-bonds">Hydrogen bonds</a></h3>
-<pre><code class="language-rust ignore">use molex::analysis::detect_hbonds;
+<p>Backbone H-bond detection is an internal pipeline step of <code>Assembly</code>; the function <code>analysis::bonds::hydrogen::detect_hbonds(&amp;[ResidueBackbone])</code> is <code>pub(crate)</code>. Read H-bonds via <code>assembly.hbonds()</code>:</p>
+<pre><code class="language-rust ignore">use molex::Assembly;
 
-let hbonds: Vec&lt;HBond&gt; = detect_hbonds(&amp;backbone_residues);
-// HBond { donor: usize, acceptor: usize } -- residue indices</code></pre>
-<p>DSSP-style backbone N-H…O=C hydrogen bond detection using electrostatic energy criteria.</p>
+let assembly = Assembly::new(entities);
+for hb in assembly.hbonds() {
+    println!("donor={} acceptor={} energy={}", hb.donor, hb.acceptor, hb.energy);
+}</code></pre>
+<p><code>HBond</code> is <code>{ donor: usize, acceptor: usize, energy: f32 }</code> (Kabsch-Sander electrostatic energy in kcal/mol).</p>
 <h3 id="disulfide-bonds"><a class="header" href="#disulfide-bonds">Disulfide bonds</a></h3>
-<pre><code class="language-rust ignore">use molex::analysis::{detect_disulfide_bonds, DisulfideBond};
+<pre><code class="language-rust ignore">use molex::{detect_disulfides, CovalentBond};
 
-let disulfides: Vec&lt;DisulfideBond&gt; = detect_disulfide_bonds(atoms);</code></pre>
-<p>Detects CYS SG-SG bonds by distance.</p>
+let disulfides: Vec&lt;CovalentBond&gt; = detect_disulfides(&amp;entities);</code></pre>
+<p>Scans every protein entity for CYS SG atoms and emits one <code>CovalentBond</code> (with <code>AtomId</code> endpoints) per SG-SG pair within 1.5–2.5 Å. Also surfaced via <code>assembly.disulfides()</code>.</p>
 <h2 id="bounding-box-analysisaabb"><a class="header" href="#bounding-box-analysisaabb">Bounding box (<code>analysis::aabb</code>)</a></h2>
 <pre><code class="language-rust ignore">use molex::analysis::Aabb;
 
@@ -638,6 +718,14 @@ aabb.radius();   // f32 -- bounding sphere radius
 let merged = aabb.union(&amp;other_aabb);
 let combined = Aabb::from_aabbs(&amp;[aabb1, aabb2, aabb3])?;</code></pre>
 <p>Also available directly on entities: <code>entity.aabb()</code>.</p>
+<h2 id="volumetric-analysisvolumetric"><a class="header" href="#volumetric-analysisvolumetric">Volumetric (<code>analysis::volumetric</code>)</a></h2>
+<p>Voxel-grid analysis used for surface and cavity work:</p>
+<pre><code class="language-rust ignore">use molex::analysis::{
+    binary_to_sdf, compute_gaussian_field, compute_ses_sdf, detect_cavities,
+    detect_cavity_mask, edt_1d, edt_3d, voxelize_sas,
+    DetectedCavity, ScalarVoxelGrid, VoxelBbox,
+};</code></pre>
+<p>These power Gaussian density approximations, solvent-excluded surface SDFs, and cavity detection.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="codec"><a class="header" href="#codec">Codec</a></h1>
 <p>Wire formats, serialization, and entity splitting/merging live in <code>molex::ops::codec</code> (source: <code>src/ops/codec/</code>).</p>
@@ -685,12 +773,13 @@ let coords: Coords = merge_entities(&amp;entities);</code></pre>
 <p>Structural alignment and extraction utilities:</p>
 <pre><code class="language-rust ignore">use molex::ops::transform::*;
 
-// Kabsch alignment (minimize RMSD between point sets)
-let (rotation, translation) = kabsch_alignment(&amp;source, &amp;target);
-let (rotation, translation, scale) = kabsch_alignment_with_scale(&amp;source, &amp;target);
+// Kabsch alignment (minimize RMSD between point sets) — returns Option
+let (rotation, translation) = kabsch_alignment(&amp;source, &amp;target)?;
+let (rotation, translation, scale) = kabsch_alignment_with_scale(&amp;source, &amp;target)?;
 
-// Apply transform to entities
-transform_entities(&amp;mut entities, &amp;rotation, &amp;translation);
+// Apply transform to entities (rotation/translation are Copy)
+transform_entities(&amp;mut entities, rotation, translation);
+transform_entities_with_scale(&amp;mut entities, rotation, translation, scale);
 
 // Align entities to a reference structure
 align_to_reference(&amp;mut mobile, &amp;reference);
@@ -738,16 +827,6 @@ let id = mapper.get_or_assign("AA"); // assigns a unique byte</code></pre>
 <h3 id="coords_from_coords"><a class="header" href="#coords_from_coords"><code>coords_from_coords</code></a></h3>
 <p>Deserialize and re-serialize COORDS bytes (round-trip validation).</p>
 <pre><code class="language-c">CoordsResult coords_from_coords(const uint8_t *coords_ptr, size_t coords_len);
-</code></pre>
-<h3 id="coords_from_backbone"><a class="header" href="#coords_from_backbone"><code>coords_from_backbone</code></a></h3>
-<p>Build COORDS from backbone positions. Currently returns an error (not yet implemented).</p>
-<pre><code class="language-c">CoordsResult coords_from_backbone(
-    const float *positions,
-    size_t num_res,
-    const char *sequence,
-    const int32_t *chain_breaks,
-    size_t chain_break_count
-);
 </code></pre>
 <h2 id="memory-management"><a class="header" href="#memory-management">Memory management</a></h2>
 <pre><code class="language-c">void coords_free_result(const CoordsResult *result);
@@ -834,22 +913,6 @@ assembly_bytes = molex.atom_array_to_coords(atom_array)
         <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
         <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
 
-        <!-- Livereload script (if served using the cli tool) -->
-        <script>
-            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
-            const socket = new WebSocket(wsAddress);
-            socket.onmessage = function (event) {
-                if (event.data === "reload") {
-                    socket.close();
-                    location.reload();
-                }
-            };
-
-            window.onbeforeunload = function() {
-                socket.close();
-            }
-        </script>
 
 
         <script>

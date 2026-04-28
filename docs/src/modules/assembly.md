@@ -1,0 +1,52 @@
+# Assembly
+
+`Assembly` (source: `src/assembly.rs`) is the host-owned structural source of truth. It bundles a `Vec<MoleculeEntity>` with eagerly-computed derived data:
+
+- per-entity DSSP secondary structure (`ss_types`)
+- backbone H-bonds (Kabsch-Sander)
+- cross-entity covalent bonds (currently disulfides)
+- a monotonic `generation` counter
+
+Every `&mut Assembly` mutation bumps `generation` and recomputes the full derived-data set before returning, so any consumer holding a snapshot sees consistent state.
+
+```rust,ignore
+use molex::{Assembly, CoordinateSnapshot};
+
+let assembly = Assembly::new(entities); // runs disulfide + DSSP + H-bond detection
+```
+
+## Read accessors
+
+| Method | Returns | Description |
+|---|---|---|
+| `entities()` | `&[MoleculeEntity]` | All entities in declaration order |
+| `entity(id)` | `Option<&MoleculeEntity>` | Look up an entity by id |
+| `generation()` | `u64` | Monotonic counter, bumps on mutation |
+| `hbonds()` | `&[HBond]` | Backbone H-bonds across all proteins (flat sequence) |
+| `ss_types(id)` | `&[SSType]` | DSSP classification per residue for an entity |
+| `cross_entity_bonds()` | `&[CovalentBond]` | Cross-entity bonds (disulfides today) |
+| `bonds_touching(atom)` | `impl Iterator<Item=AtomId>` | Far endpoints of bonds touching `atom` (intra + cross) |
+| `disulfides()` | `impl Iterator<Item=&CovalentBond>` | CYS SG-SG cross-entity bonds |
+
+## Mutations
+
+All mutations recompute derived data:
+
+```rust,ignore
+assembly.add_entity(new_entity);
+assembly.remove_entity(entity_id);
+assembly.update_positions(entity_id, &new_coords);   // skipped if atom counts mismatch
+assembly.set_coordinate_snapshot(snapshot);          // bulk position update
+```
+
+## CoordinateSnapshot
+
+`CoordinateSnapshot` captures per-entity positions for a "save / restore" workflow:
+
+```rust,ignore
+let saved = CoordinateSnapshot::from_assembly(&assembly);
+// ... run mutations ...
+assembly.set_coordinate_snapshot(saved); // restore
+```
+
+Entities present in the snapshot but missing from the assembly are ignored; entities in the assembly missing from the snapshot keep their current positions.

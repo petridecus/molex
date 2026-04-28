@@ -15,6 +15,7 @@
 # Modules
 
 - [Entity System](modules/entity.md)
+- [Assembly](modules/assembly.md)
 - [Adapters](modules/adapters.md)
 - [Analysis](modules/analysis.md)
 - [Codec](modules/codec.md)

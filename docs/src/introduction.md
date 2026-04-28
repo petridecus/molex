@@ -6,11 +6,15 @@
 
 - **`MoleculeEntity`** represents a single molecule: a protein chain, a DNA/RNA strand, a ligand, an ion, or a group of waters. Parsing a structure file produces a `Vec<MoleculeEntity>`.
 
+- **`Assembly`** is the top-level host container: it owns the entities, cross-entity bonds (disulfides), per-entity DSSP secondary structure, and backbone H-bonds, with a generation counter that increments on every mutation.
+
 - **`Atom`** holds a position, element, atom name, occupancy, and B-factor. Residue and chain context live on the entity that contains the atom.
 
-- **`Coords`** is a binary serialization format used for FFI and IPC (e.g. iceoryx zero-copy between processes).
+- **`AtomId`** and **`CovalentBond`** are the cross-cutting identifiers: bonds reference atoms by `AtomId { entity, index }` so they remain addressable across reorderings.
 
-- **Analysis** includes covalent bond inference, DSSP hydrogen bond detection, disulfide bridges, and secondary structure classification.
+- **`Coords`** is a flat binary serialization format used for FFI and IPC. **`ASSEM01`** is the entity-aware counterpart that round-trips molecule type metadata.
+
+- **Analysis** includes covalent bond inference, DSSP hydrogen bond detection, disulfide bridges, secondary structure classification, AABBs, and volumetric/SES utilities.
 
 - **`VoxelGrid`** and **`Density`** represent 3D volumetric data (electron density, cryo-EM maps).
 

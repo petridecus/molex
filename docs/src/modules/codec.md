@@ -69,12 +69,13 @@ Structural alignment and extraction utilities:
 ```rust,ignore
 use molex::ops::transform::*;
 
-// Kabsch alignment (minimize RMSD between point sets)
-let (rotation, translation) = kabsch_alignment(&source, &target);
-let (rotation, translation, scale) = kabsch_alignment_with_scale(&source, &target);
+// Kabsch alignment (minimize RMSD between point sets) — returns Option
+let (rotation, translation) = kabsch_alignment(&source, &target)?;
+let (rotation, translation, scale) = kabsch_alignment_with_scale(&source, &target)?;
 
-// Apply transform to entities
-transform_entities(&mut entities, &rotation, &translation);
+// Apply transform to entities (rotation/translation are Copy)
+transform_entities(&mut entities, rotation, translation);
+transform_entities_with_scale(&mut entities, rotation, translation, scale);
 
 // Align entities to a reference structure
 align_to_reference(&mut mobile, &reference);

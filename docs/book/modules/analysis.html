@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-056f3aa0.js";
+            window.path_to_searchindex_js = "../searchindex-04df7296.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-27f43c42.js"></script>
+        <script src="../toc-545e026b.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,44 +178,45 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="analysis"><a class="header" href="#analysis">Analysis</a></h1>
-<p>Structural analysis lives in <code>molex::analysis</code> (source: <code>src/analysis/</code>). All analysis functions operate on entity-level types (<code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>).</p>
+<p>Structural analysis lives in <code>molex::analysis</code> (source: <code>src/analysis/</code>). Most analysis functions operate on entity-level types (<code>&amp;[Atom]</code>, <code>&amp;[ResidueBackbone]</code>, <code>&amp;[MoleculeEntity]</code>).</p>
+<p>The eagerly-computed pipeline (DSSP secondary structure + backbone H-bonds + disulfides) is exposed through <a href="../architecture/overview.html"><code>Assembly</code></a> — see <code>Assembly::ss_types</code>, <code>Assembly::hbonds</code>, and <code>Assembly::disulfides</code>. The standalone functions documented below are the building blocks underneath.</p>
 <h2 id="secondary-structure-analysisss"><a class="header" href="#secondary-structure-analysisss">Secondary structure (<code>analysis::ss</code>)</a></h2>
 <p>DSSP-based secondary structure classification.</p>
-<pre><code class="language-rust ignore">use molex::analysis::{detect_dssp, resolve_ss, SSType};
+<pre><code class="language-rust ignore">use molex::analysis::ss::{classify, from_string};
+use molex::analysis::{HBond, SSType};
 
-// Full DSSP: detect H-bonds, then classify
-let (ss_types, hbonds) = detect_dssp(&amp;backbone_residues);
-// ss_types: Vec&lt;SSType&gt; -- one per residue (Helix, Sheet, or Coil)
-// hbonds: Vec&lt;HBond&gt; -- backbone H-bond pairs that produced the assignment
+// Classify residues from a precomputed H-bond list.
+let ss_types: Vec&lt;SSType&gt; = classify(&amp;hbonds, n_residues);
 
-// With optional override (e.g. from mmCIF annotation)
-let ss = resolve_ss(Some(&amp;override_ss), &amp;backbone_residues);
-// Falls back to DSSP if override is None</code></pre>
+// Parse a secondary-structure string like "HHHCCCEEE" into Vec&lt;SSType&gt;.
+let ss_types = from_string("HHHCCCEEE");</code></pre>
 <p><code>SSType</code> is a Q3 classification:</p>
 <pre><code class="language-rust ignore">pub enum SSType { Helix, Sheet, Coil }</code></pre>
 <p>Each variant has a <code>.color()</code> method returning an RGB <code>[f32; 3]</code> for rendering.</p>
-<p>Short isolated segments (1-residue helix/sheet runs) are automatically merged to <code>Coil</code> by <code>merge_short_segments</code>.</p>
-<h3 id="ss-from-string"><a class="header" href="#ss-from-string">SS from string</a></h3>
-<p><code>analysis::ss::from_string</code> parses secondary structure strings (e.g. <code>"HHHCCCEEE"</code>) into <code>Vec&lt;SSType&gt;</code>.</p>
+<p><code>analysis::merge_short_segments</code> converts isolated 1-residue helix/sheet runs to <code>Coil</code>.</p>
+<p>For most callers the recommended path is to construct an <code>Assembly</code> and read <code>assembly.ss_types(entity_id)</code> — the assembly internally runs H-bond detection and <code>classify</code> for every protein entity.</p>
 <h2 id="bond-detection-analysisbonds"><a class="header" href="#bond-detection-analysisbonds">Bond detection (<code>analysis::bonds</code>)</a></h2>
-<h3 id="covalent-bonds"><a class="header" href="#covalent-bonds">Covalent bonds</a></h3>
+<h3 id="covalent-bonds-distance-based"><a class="header" href="#covalent-bonds-distance-based">Covalent bonds (distance-based)</a></h3>
 <pre><code class="language-rust ignore">use molex::analysis::{infer_bonds, InferredBond, BondOrder, DEFAULT_TOLERANCE};
 
-let bonds: Vec&lt;InferredBond&gt; = infer_bonds(atoms, tolerance);
+let bonds: Vec&lt;InferredBond&gt; = infer_bonds(atoms, DEFAULT_TOLERANCE);
 // InferredBond { atom_a: usize, atom_b: usize, order: BondOrder }
 // BondOrder: Single, Double, Triple, Aromatic</code></pre>
-<p>Distance-based inference using element covalent radii with a configurable tolerance (default: <code>DEFAULT_TOLERANCE</code>).</p>
+<p>Distance-based inference using element covalent radii with a configurable tolerance. Used for ligands and other non-protein entities where bond topology isn’t supplied by a chemistry table. Protein and nucleic-acid bonds are populated from the chemistry tables at entity construction time and live on <code>ProteinEntity::bonds</code> / <code>NAEntity::bonds</code>.</p>
 <h3 id="hydrogen-bonds"><a class="header" href="#hydrogen-bonds">Hydrogen bonds</a></h3>
-<pre><code class="language-rust ignore">use molex::analysis::detect_hbonds;
+<p>Backbone H-bond detection is an internal pipeline step of <code>Assembly</code>; the function <code>analysis::bonds::hydrogen::detect_hbonds(&amp;[ResidueBackbone])</code> is <code>pub(crate)</code>. Read H-bonds via <code>assembly.hbonds()</code>:</p>
+<pre><code class="language-rust ignore">use molex::Assembly;
 
-let hbonds: Vec&lt;HBond&gt; = detect_hbonds(&amp;backbone_residues);
-// HBond { donor: usize, acceptor: usize } -- residue indices</code></pre>
-<p>DSSP-style backbone N-H…O=C hydrogen bond detection using electrostatic energy criteria.</p>
+let assembly = Assembly::new(entities);
+for hb in assembly.hbonds() {
+    println!("donor={} acceptor={} energy={}", hb.donor, hb.acceptor, hb.energy);
+}</code></pre>
+<p><code>HBond</code> is <code>{ donor: usize, acceptor: usize, energy: f32 }</code> (Kabsch-Sander electrostatic energy in kcal/mol).</p>
 <h3 id="disulfide-bonds"><a class="header" href="#disulfide-bonds">Disulfide bonds</a></h3>
-<pre><code class="language-rust ignore">use molex::analysis::{detect_disulfide_bonds, DisulfideBond};
+<pre><code class="language-rust ignore">use molex::{detect_disulfides, CovalentBond};
 
-let disulfides: Vec&lt;DisulfideBond&gt; = detect_disulfide_bonds(atoms);</code></pre>
-<p>Detects CYS SG-SG bonds by distance.</p>
+let disulfides: Vec&lt;CovalentBond&gt; = detect_disulfides(&amp;entities);</code></pre>
+<p>Scans every protein entity for CYS SG atoms and emits one <code>CovalentBond</code> (with <code>AtomId</code> endpoints) per SG-SG pair within 1.5–2.5 Å. Also surfaced via <code>assembly.disulfides()</code>.</p>
 <h2 id="bounding-box-analysisaabb"><a class="header" href="#bounding-box-analysisaabb">Bounding box (<code>analysis::aabb</code>)</a></h2>
 <pre><code class="language-rust ignore">use molex::analysis::Aabb;
 
@@ -227,6 +228,14 @@ aabb.radius();   // f32 -- bounding sphere radius
 let merged = aabb.union(&amp;other_aabb);
 let combined = Aabb::from_aabbs(&amp;[aabb1, aabb2, aabb3])?;</code></pre>
 <p>Also available directly on entities: <code>entity.aabb()</code>.</p>
+<h2 id="volumetric-analysisvolumetric"><a class="header" href="#volumetric-analysisvolumetric">Volumetric (<code>analysis::volumetric</code>)</a></h2>
+<p>Voxel-grid analysis used for surface and cavity work:</p>
+<pre><code class="language-rust ignore">use molex::analysis::{
+    binary_to_sdf, compute_gaussian_field, compute_ses_sdf, detect_cavities,
+    detect_cavity_mask, edt_1d, edt_3d, voxelize_sas,
+    DetectedCavity, ScalarVoxelGrid, VoxelBbox,
+};</code></pre>
+<p>These power Gaussian density approximations, solvent-excluded surface SDFs, and cavity detection.</p>
 
                     </main>
 
@@ -263,22 +272,6 @@ let combined = Aabb::from_aabbs(&amp;[aabb1, aabb2, aabb3])?;</code></pre>
         <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
         <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
 
-        <!-- Livereload script (if served using the cli tool) -->
-        <script>
-            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
-            const socket = new WebSocket(wsAddress);
-            socket.onmessage = function (event) {
-                if (event.data === "reload") {
-                    socket.close();
-                    location.reload();
-                }
-            };
-
-            window.onbeforeunload = function() {
-                socket.close();
-            }
-        </script>
 
 
         <script>

@@ -5,16 +5,15 @@
 ```
                        ┌──────────────┐
  PDB / mmCIF / BCIF ──>│              ├──> Vec<MoleculeEntity>
- MRC / CCP4         ──>│   Adapters   ├──> Density (SurfaceEntity)
+ MRC / CCP4         ──>│   Adapters   ├──> Density (wraps VoxelGrid)
  DCD                ──>│              ├──> Vec<DcdFrame>
                        └──────┬───────┘
                               │
                               v
                   ┌───────────────────────┐
-                  │       Entities        │
-                  │                       │
-                  │  MoleculeEntity       │
-                  │  SurfaceEntity        │
+                  │       Assembly        │
+                  │  (entities + derived: │
+                  │   ss, hbonds, S-S)    │
                   └──┬────────┬────────┬──┘
                      │        │        │
                      v        v        v
@@ -64,16 +63,25 @@ Each entity gets a unique `EntityId`.
 ## 3. Analysis
 
 ```rust,ignore
-let (ss_types, hbonds) = detect_dssp(&backbone_residues);
-let bonds = infer_bonds(&atoms, DEFAULT_TOLERANCE);
-let disulfides = detect_disulfide_bonds(&atoms);
-let aabb = entity.aabb();
+use molex::{detect_disulfides, Assembly};
+use molex::analysis::{infer_bonds, DEFAULT_TOLERANCE};
+
+// Top-level pipeline: build an Assembly to get DSSP, H-bonds,
+// and cross-entity disulfides eagerly computed and kept in sync.
+let assembly = Assembly::new(entities);
+let hbonds = assembly.hbonds();
+let ss     = assembly.ss_types(entity_id);
+
+// Or call the building blocks directly:
+let bonds      = infer_bonds(atoms, DEFAULT_TOLERANCE);   // distance-based
+let disulfides = detect_disulfides(&entities);             // CYS SG-SG
+let aabb       = entity.aabb();
 ```
 
 ## 4. Transforms
 
 ```rust,ignore
-let (rotation, translation) = kabsch_alignment(&reference_ca, &target_ca);
+let (rotation, translation) = kabsch_alignment(&reference_ca, &target_ca)?;
 transform_entities(&mut entities, rotation, translation);
 let ca_positions = extract_ca_positions(&entities);
 ```

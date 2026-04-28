@@ -51,14 +51,18 @@ for entity in &proteins {
 
 ## Run DSSP secondary structure assignment
 
-```rust,ignore
-use molex::analysis::{detect_dssp, SSType};
+DSSP and backbone H-bond detection are run automatically when you build an `Assembly`:
 
-let protein = entities[0].as_protein().unwrap();
-let backbone = protein.to_backbone();
-let (ss_types, hbonds) = detect_dssp(&backbone);
-for (i, ss) in ss_types.iter().enumerate() {
+```rust,ignore
+use molex::{Assembly, SSType};
+
+let assembly = Assembly::new(entities);
+let protein_id = assembly.entities()[0].id();
+for (i, ss) in assembly.ss_types(protein_id).iter().enumerate() {
     println!("Residue {}: {:?}", i, ss); // Helix, Sheet, or Coil
+}
+for hb in assembly.hbonds() {
+    println!("donor {} -> acceptor {} (E = {} kcal/mol)", hb.donor, hb.acceptor, hb.energy);
 }
 ```
 
