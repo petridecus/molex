@@ -9,7 +9,8 @@ pub(crate) mod classify;
 pub mod id;
 /// Nucleic acid entity (DNA, RNA).
 pub mod nucleic_acid;
-mod polymer;
+/// Polymer residue (shared by protein and nucleic acid entities).
+pub mod polymer;
 /// Protein entity with residues and segment breaks.
 pub mod protein;
 /// Small molecule entity (ligand, ion, cofactor).
@@ -22,7 +23,7 @@ pub use classify::classify_residue;
 use glam::Vec3;
 pub use id::{EntityId, EntityIdAllocator};
 pub use nucleic_acid::NucleotideRing;
-pub(crate) use polymer::Residue;
+pub use polymer::Residue;
 
 use self::bulk::BulkEntity;
 use self::nucleic_acid::NAEntity;

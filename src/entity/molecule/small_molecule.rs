@@ -33,6 +33,47 @@ pub struct SmallMoleculeEntity {
 }
 
 impl SmallMoleculeEntity {
+    /// Construct from a list of atoms. Bonds are inferred via
+    /// distance-based [`infer_bonds`]. The display name is derived from
+    /// `residue_name` and `mol_type`.
+    #[must_use]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "atom indices bounded by small-molecule atom count"
+    )]
+    pub fn new(
+        id: EntityId,
+        mol_type: MoleculeType,
+        atoms: Vec<Atom>,
+        residue_name: [u8; 3],
+    ) -> Self {
+        let rn_str = std::str::from_utf8(&residue_name).unwrap_or("???").trim();
+        let display_name =
+            super::classify::small_molecule_display_name(mol_type, rn_str);
+        let bonds = infer_bonds(&atoms, DEFAULT_TOLERANCE)
+            .into_iter()
+            .map(|b| CovalentBond {
+                a: AtomId {
+                    entity: id,
+                    index: b.atom_a as u32,
+                },
+                b: AtomId {
+                    entity: id,
+                    index: b.atom_b as u32,
+                },
+                order: b.order,
+            })
+            .collect();
+        Self {
+            id,
+            mol_type,
+            atoms,
+            residue_name,
+            display_name,
+            bonds,
+        }
+    }
+
     /// Construct from flat `Coords` atom indices during entity splitting.
     #[must_use]
     #[allow(

@@ -155,6 +155,42 @@ impl ProteinEntity {
         }
     }
 
+    /// Construct a protein entity assuming a single continuous chain
+    /// with no segment breaks — bypasses the C(i)→N(i+1) distance-based
+    /// segment-break detection used by [`Self::new`].
+    ///
+    /// Useful for synthetic backbones where positions don't yet reflect
+    /// real peptide-bond geometry (e.g. ML diffusion intermediates):
+    /// noisy positions would otherwise produce a segment break at every
+    /// residue and the chain would render as disconnected fragments.
+    /// Caller is responsible for knowing that the residues form one
+    /// chain.
+    #[must_use]
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "constructor owns the inputs; canonicalize borrows before \
+                  reassigning new owned vecs"
+    )]
+    pub fn new_continuous(
+        id: EntityId,
+        atoms: Vec<Atom>,
+        residues: Vec<Residue>,
+        pdb_chain_id: u8,
+    ) -> Self {
+        let (atoms, residues) =
+            canonicalize_protein_residues(&atoms, &residues, pdb_chain_id);
+        let segment_breaks = Vec::new();
+        let bonds = build_protein_bonds(id, &atoms, &residues, &segment_breaks);
+        Self {
+            id,
+            atoms,
+            residues,
+            segment_breaks,
+            bonds,
+            pdb_chain_id,
+        }
+    }
+
     /// Iterate covalent bonds whose endpoints lie in any residue's
     /// canonical backbone region (indices `atom_range.start..+4`).
     ///

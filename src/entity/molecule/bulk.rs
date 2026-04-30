@@ -27,6 +27,25 @@ pub struct BulkEntity {
 }
 
 impl BulkEntity {
+    /// Construct from a list of atoms. `molecule_count` is supplied by
+    /// the caller (typically the number of residues in the source).
+    #[must_use]
+    pub fn new(
+        id: EntityId,
+        mol_type: MoleculeType,
+        atoms: Vec<Atom>,
+        residue_name: [u8; 3],
+        molecule_count: usize,
+    ) -> Self {
+        Self {
+            id,
+            mol_type,
+            atoms,
+            residue_name,
+            molecule_count,
+        }
+    }
+
     /// Construct from flat `Coords` atom indices during entity splitting.
     #[must_use]
     pub fn from_coords_indices(

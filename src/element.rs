@@ -106,6 +106,65 @@ impl Element {
         )
     }
 
+    /// Atomic number. Returns 0 for [`Element::Unknown`].
+    #[must_use]
+    pub fn atomic_number(self) -> u8 {
+        match self {
+            Element::H => 1,
+            Element::C => 6,
+            Element::N => 7,
+            Element::O => 8,
+            Element::F => 9,
+            Element::Na => 11,
+            Element::Mg => 12,
+            Element::P => 15,
+            Element::S => 16,
+            Element::Cl => 17,
+            Element::K => 19,
+            Element::Ca => 20,
+            Element::Mn => 25,
+            Element::Fe => 26,
+            Element::Co => 27,
+            Element::Ni => 28,
+            Element::Cu => 29,
+            Element::Zn => 30,
+            Element::Se => 34,
+            Element::Br => 35,
+            Element::I => 53,
+            Element::Unknown => 0,
+        }
+    }
+
+    /// Lookup by atomic number. Returns [`Element::Unknown`] for any
+    /// number not in this enum.
+    #[must_use]
+    pub fn from_atomic_number(z: u8) -> Self {
+        match z {
+            1 => Element::H,
+            6 => Element::C,
+            7 => Element::N,
+            8 => Element::O,
+            9 => Element::F,
+            11 => Element::Na,
+            12 => Element::Mg,
+            15 => Element::P,
+            16 => Element::S,
+            17 => Element::Cl,
+            19 => Element::K,
+            20 => Element::Ca,
+            25 => Element::Mn,
+            26 => Element::Fe,
+            27 => Element::Co,
+            28 => Element::Ni,
+            29 => Element::Cu,
+            30 => Element::Zn,
+            34 => Element::Se,
+            35 => Element::Br,
+            53 => Element::I,
+            _ => Element::Unknown,
+        }
+    }
+
     /// Standard CPK coloring (Corey-Pauling-Koltun).
     #[must_use]
     pub fn cpk_color(&self) -> [f32; 3] {
