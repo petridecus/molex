@@ -48,6 +48,10 @@ harness = false
 name = "analysis"
 harness = false
 
+[[bench]]
+name = "assembly_clone"
+harness = false
+
 [lints.clippy]
 # Broad lint groups (lower priority so individual lints can override)
 all = { level = "deny", priority = -1 }

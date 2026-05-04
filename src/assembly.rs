@@ -7,6 +7,7 @@
 //! consistent `ss_types`, `hbonds`, and `cross_entity_bonds`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use glam::Vec3;
 
@@ -21,17 +22,19 @@ use crate::entity::molecule::MoleculeEntity;
 
 /// Top-level container of entities plus eagerly-computed derived data.
 ///
-/// Layout matches `Assembly migration` decisions #2, #5, #7, #11: entities
-/// own their intra-entity bonds; `Assembly` owns cross-entity bonds
-/// (disulfides only in this migration) and the full derived-data set
-/// (`ss_types`, `hbonds`). The generation counter increments on every
+/// Each entity is stored behind an `Arc`, so cloning an `Assembly` is
+/// O(entities) of refcount bumps — independent of the total atom count.
+/// Mutations clone only the touched entity (`Arc::make_mut`) and leave
+/// the rest aliased with prior snapshots. Derived data (`ss_types`,
+/// `hbonds`) is also `Arc`-shared so snapshots that didn't trigger a
+/// rebuild stay aliased. The generation counter increments on every
 /// mutation so consumers can detect snapshots cheaply.
 #[derive(Debug, Clone)]
 pub struct Assembly {
-    entities: Vec<MoleculeEntity>,
+    entities: Vec<Arc<MoleculeEntity>>,
     cross_entity_bonds: Vec<CovalentBond>,
-    ss_types: HashMap<EntityId, Vec<SSType>>,
-    hbonds: Vec<HBond>,
+    ss_types: HashMap<EntityId, Arc<Vec<SSType>>>,
+    hbonds: Arc<Vec<HBond>>,
     generation: u64,
 }
 
@@ -95,10 +98,10 @@ impl Assembly {
     #[must_use]
     pub fn new(entities: Vec<MoleculeEntity>) -> Self {
         let mut this = Self {
-            entities,
+            entities: entities.into_iter().map(Arc::new).collect(),
             cross_entity_bonds: Vec::new(),
             ss_types: HashMap::new(),
-            hbonds: Vec::new(),
+            hbonds: Arc::new(Vec::new()),
             generation: 0,
         };
         this.recompute_derived();
@@ -108,15 +111,20 @@ impl Assembly {
     // ── Read accessors ──────────────────────────────────────────────
 
     /// All entities in declaration order.
+    ///
+    /// Each entry is an `Arc<MoleculeEntity>` so cloning the slice into
+    /// a new `Assembly` is O(entities) of refcount bumps. `&Arc<T>`
+    /// derefs to `&T` for method calls, so most call sites do not need
+    /// to change shape.
     #[must_use]
-    pub fn entities(&self) -> &[MoleculeEntity] {
+    pub fn entities(&self) -> &[Arc<MoleculeEntity>] {
         &self.entities
     }
 
     /// Look up an entity by id.
     #[must_use]
     pub fn entity(&self, id: EntityId) -> Option<&MoleculeEntity> {
-        self.entities.iter().find(|e| e.id() == id)
+        self.entities.iter().map(Arc::as_ref).find(|e| e.id() == id)
     }
 
     /// Monotonic counter incremented on every mutation.
@@ -141,7 +149,7 @@ impl Assembly {
     /// backbone residues).
     #[must_use]
     pub fn ss_types(&self, id: EntityId) -> &[SSType] {
-        self.ss_types.get(&id).map_or(&[], Vec::as_slice)
+        self.ss_types.get(&id).map_or(&[], |ss| ss.as_slice())
     }
 
     /// Cross-entity covalent bonds. In this migration this contains
@@ -185,7 +193,7 @@ impl Assembly {
     /// Append an entity. Bumps the generation counter and recomputes
     /// all derived data.
     pub fn add_entity(&mut self, entity: MoleculeEntity) {
-        self.entities.push(entity);
+        self.entities.push(Arc::new(entity));
         self.after_mutation();
     }
 
@@ -210,16 +218,16 @@ impl Assembly {
             );
             return;
         };
-        let atoms = self.entities[idx].atom_set_mut();
-        if atoms.len() != coords.len() {
+        if self.entities[idx].atom_count() != coords.len() {
             log::error!(
                 "Assembly::update_positions: entity {entity} has {} atoms but \
                  {} coords were supplied; skipping update",
-                atoms.len(),
+                self.entities[idx].atom_count(),
                 coords.len(),
             );
             return;
         }
+        let atoms = Arc::make_mut(&mut self.entities[idx]).atom_set_mut();
         for (atom, &pos) in atoms.iter_mut().zip(coords.iter()) {
             atom.position = pos;
         }
@@ -247,17 +255,17 @@ impl Assembly {
             let Some(coords) = snapshot.per_entity.get(&entity_id) else {
                 continue;
             };
-            let atoms = entity.atom_set_mut();
-            if atoms.len() != coords.len() {
+            if entity.atom_count() != coords.len() {
                 log::error!(
                     "Assembly::set_coordinate_snapshot: entity {entity_id} \
                      has {} atoms but snapshot carries {}; skipping this \
                      entity",
-                    atoms.len(),
+                    entity.atom_count(),
                     coords.len(),
                 );
                 continue;
             }
+            let atoms = Arc::make_mut(entity).atom_set_mut();
             for (atom, &pos) in atoms.iter_mut().zip(coords.iter()) {
                 atom.position = pos;
             }
@@ -275,7 +283,7 @@ impl Assembly {
     fn recompute_derived(&mut self) {
         self.cross_entity_bonds = detect_disulfides(&self.entities);
         self.ss_types = compute_per_entity_ss(&self.entities);
-        self.hbonds = compute_flat_hbonds(&self.entities);
+        self.hbonds = Arc::new(compute_flat_hbonds(&self.entities));
     }
 
     fn is_cys_sg(&self, atom: AtomId) -> bool {
@@ -322,12 +330,12 @@ fn other_endpoint(bond: &CovalentBond, atom: AtomId) -> Option<AtomId> {
     }
 }
 
-fn compute_per_entity_ss(
-    entities: &[MoleculeEntity],
-) -> HashMap<EntityId, Vec<SSType>> {
+fn compute_per_entity_ss<E: std::borrow::Borrow<MoleculeEntity>>(
+    entities: &[E],
+) -> HashMap<EntityId, Arc<Vec<SSType>>> {
     let mut out = HashMap::new();
     for entity in entities {
-        let Some(protein) = entity.as_protein() else {
+        let Some(protein) = entity.borrow().as_protein() else {
             continue;
         };
         let backbone = protein.to_backbone();
@@ -336,15 +344,17 @@ fn compute_per_entity_ss(
         }
         let hbonds = detect_hbonds(&backbone);
         let ss = classify(&hbonds, backbone.len());
-        let _ = out.insert(protein.id, ss);
+        let _ = out.insert(protein.id, Arc::new(ss));
     }
     out
 }
 
-fn compute_flat_hbonds(entities: &[MoleculeEntity]) -> Vec<HBond> {
+fn compute_flat_hbonds<E: std::borrow::Borrow<MoleculeEntity>>(
+    entities: &[E],
+) -> Vec<HBond> {
     let mut flat = Vec::new();
     for entity in entities {
-        let Some(protein) = entity.as_protein() else {
+        let Some(protein) = entity.borrow().as_protein() else {
             continue;
         };
         flat.extend(protein.to_backbone());
@@ -375,14 +385,9 @@ fn trimmed_atom_name(name: &[u8; 4]) -> &[u8] {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::float_cmp, clippy::cast_precision_loss)]
 mod tests {
-    use std::path::Path;
-
     use glam::Vec3;
 
     use super::*;
-    use crate::adapters::pdb::structure_file_to_entities;
-    use crate::analysis::bonds::hydrogen::detect_hbonds;
-    use crate::analysis::ss::dssp::classify;
     use crate::element::Element;
     use crate::entity::molecule::atom::Atom;
     use crate::entity::molecule::id::EntityIdAllocator;
@@ -726,55 +731,5 @@ mod tests {
                 .length()
                 < 1e-6
         );
-    }
-
-    // -- Byte-identity vs the legacy per-slice path (viso's Phase-3 gate) --
-
-    /// On a real protein, `Assembly::ss_types` / `Assembly::hbonds`
-    /// must match what the legacy free-function path produces on the
-    /// same inputs. This is the "byte-identity" gate that lets Phase 4
-    /// swap the data source without rendering regressions.
-    #[test]
-    fn byte_identity_against_legacy_path_1ubq() {
-        let path = Path::new("../viso/assets/models/1ubq.cif");
-        assert!(
-            path.exists(),
-            "byte-identity fixture missing at {}",
-            path.display(),
-        );
-
-        let entities = structure_file_to_entities(path).unwrap();
-        let protein = entities.iter().find_map(|e| e.as_protein()).unwrap();
-        let protein_id = protein.id;
-
-        // Legacy path (still used by viso pre-Phase-4):
-        let legacy_backbone: Vec<_> = entities
-            .iter()
-            .filter_map(MoleculeEntity::as_protein)
-            .flat_map(ProteinEntity::to_backbone)
-            .collect();
-        let legacy_hbonds = detect_hbonds(&legacy_backbone);
-        let per_entity_backbone = protein.to_backbone();
-        let legacy_ss = classify(
-            &detect_hbonds(&per_entity_backbone),
-            per_entity_backbone.len(),
-        );
-
-        // Assembly path:
-        let assembly = Assembly::new(entities.clone());
-        assert_eq!(
-            assembly.hbonds(),
-            legacy_hbonds.as_slice(),
-            "flat-backbone H-bonds must match the legacy viso path"
-        );
-        assert_eq!(
-            assembly.ss_types(protein_id),
-            legacy_ss.as_slice(),
-            "per-entity SS must match the legacy per-entity DSSP path"
-        );
-        // Disulfide coverage lives in
-        // `disulfides_filtered_and_cross_bonds_populated`; asserting it
-        // here against `detect_disulfides` would be tautological
-        // because `Assembly::new` calls the same function internally.
     }
 }

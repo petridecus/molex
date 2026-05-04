@@ -49,14 +49,15 @@ impl AtomData {
 }
 
 /// Collect per-atom annotation data from entities into flat vectors.
-pub(crate) fn collect_atom_data(
-    entities: &[MoleculeEntity],
+pub(crate) fn collect_atom_data<E: std::borrow::Borrow<MoleculeEntity>>(
+    entities: &[E],
     total_atoms: usize,
 ) -> AtomData {
     let mut data = AtomData::with_capacity(total_atoms);
     let mut atom_offset: usize = 0;
 
     for entity in entities {
+        let entity = entity.borrow();
         let c = entity.to_coords();
         append_entity_atoms(&mut data, entity, &c);
         append_entity_bonds(&mut data, entity, atom_offset);
@@ -156,12 +157,14 @@ fn append_entity_bonds(
 /// - AtomWorks annotations: `entity_id` (per-atom int), `mol_type` (per-atom
 ///   str), `chain_type` (per-atom int matching `atomworks.enums.ChainType`)
 /// - `BondList` populated from entity bond data or distance inference
-pub(crate) fn entities_to_atom_array_impl(
+pub(crate) fn entities_to_atom_array_impl<
+    E: std::borrow::Borrow<MoleculeEntity>,
+>(
     py: Python,
-    entities: &[MoleculeEntity],
+    entities: &[E],
 ) -> PyResult<Py<PyAny>> {
     let total_atoms: usize =
-        entities.iter().map(MoleculeEntity::atom_count).sum();
+        entities.iter().map(|e| e.borrow().atom_count()).sum();
     if total_atoms == 0 {
         let biotite = py.import("biotite.structure")?;
         let arr = biotite.getattr("AtomArray")?.call1((0,))?;

@@ -3,6 +3,8 @@
 //! Detects Cys-Cys disulfide bridges by finding SG-SG atom pairs within
 //! the expected distance range (~2.05 Å).
 
+use std::borrow::Borrow;
+
 use crate::analysis::BondOrder;
 use crate::atom_id::AtomId;
 use crate::bond::CovalentBond;
@@ -27,7 +29,9 @@ const MIN_SS_DISTANCE: f32 = 1.5;
     clippy::cast_possible_truncation,
     reason = "atom indices are bounded by entity size (< u32::MAX)"
 )]
-pub fn detect_disulfides(entities: &[MoleculeEntity]) -> Vec<CovalentBond> {
+pub fn detect_disulfides<E: Borrow<MoleculeEntity>>(
+    entities: &[E],
+) -> Vec<CovalentBond> {
     #[derive(Clone, Copy)]
     struct SgAtom {
         id: AtomId,
@@ -36,7 +40,7 @@ pub fn detect_disulfides(entities: &[MoleculeEntity]) -> Vec<CovalentBond> {
 
     let mut sg_atoms: Vec<SgAtom> = Vec::new();
     for entity in entities {
-        let MoleculeEntity::Protein(protein) = entity else {
+        let MoleculeEntity::Protein(protein) = entity.borrow() else {
             continue;
         };
         for residue in &protein.residues {

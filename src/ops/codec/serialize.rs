@@ -65,11 +65,11 @@ pub fn serialize_assembly(assembly: &Assembly) -> Result<Vec<u8>, CoordsError> {
     reason = "mirrors `serialize_assembly` which keeps the `Result` for API \
               consistency"
 )]
-pub(crate) fn serialize_entities(
-    entities: &[MoleculeEntity],
+pub(crate) fn serialize_entities<E: std::borrow::Borrow<MoleculeEntity>>(
+    entities: &[E],
 ) -> Result<Vec<u8>, CoordsError> {
     let total_atoms: usize =
-        entities.iter().map(MoleculeEntity::atom_count).sum();
+        entities.iter().map(|e| e.borrow().atom_count()).sum();
     let header_size = 8 + 4 + entities.len() * 5;
     let atom_size = total_atoms * 26;
     let mut buffer = Vec::with_capacity(header_size + atom_size);
@@ -83,6 +83,7 @@ pub(crate) fn serialize_entities(
 
     // Per-entity headers
     for entity in entities {
+        let entity = entity.borrow();
         buffer.push(molecule_type_to_wire(entity.molecule_type()));
         #[allow(clippy::cast_possible_truncation)] // atom count fits in u32
         buffer.extend_from_slice(&(entity.atom_count() as u32).to_be_bytes());
@@ -90,7 +91,7 @@ pub(crate) fn serialize_entities(
 
     // Atom data (same layout as COORDS01)
     for entity in entities {
-        let c = entity.to_coords();
+        let c = entity.borrow().to_coords();
         for i in 0..c.num_atoms {
             write_atom(&mut buffer, &c, i);
         }

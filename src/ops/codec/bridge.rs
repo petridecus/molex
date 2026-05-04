@@ -276,9 +276,11 @@ pub fn split_into_entities(coords: &Coords) -> Vec<MoleculeEntity> {
 
 /// Merge multiple entities back into a single flat `Coords`.
 #[must_use]
-pub fn merge_entities(entities: &[MoleculeEntity]) -> Coords {
+pub fn merge_entities<E: std::borrow::Borrow<MoleculeEntity>>(
+    entities: &[E],
+) -> Coords {
     let total_atoms: usize =
-        entities.iter().map(MoleculeEntity::atom_count).sum();
+        entities.iter().map(|e| e.borrow().atom_count()).sum();
 
     let mut atoms = Vec::with_capacity(total_atoms);
     let mut chain_ids = Vec::with_capacity(total_atoms);
@@ -288,7 +290,7 @@ pub fn merge_entities(entities: &[MoleculeEntity]) -> Coords {
     let mut elements = Vec::with_capacity(total_atoms);
 
     for entity in entities {
-        let c = entity.to_coords();
+        let c = entity.borrow().to_coords();
         atoms.extend(c.atoms);
         chain_ids.extend(c.chain_ids);
         res_names.extend(c.res_names);

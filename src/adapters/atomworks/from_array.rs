@@ -374,7 +374,12 @@ pub fn atom_array_to_entity_vec(
     let atom_array_py: Py<PyAny> = atom_array.clone().unbind();
     let bytes = atom_array_to_entities(py, atom_array_py)?;
     crate::ops::codec::deserialize_assembly(&bytes)
-        .map(|a| a.entities().to_vec())
+        .map(|a| {
+            a.entities()
+                .iter()
+                .map(|e| MoleculeEntity::clone(e))
+                .collect()
+        })
         .map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
         })
