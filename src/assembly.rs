@@ -133,6 +133,17 @@ impl Assembly {
         self.generation
     }
 
+    /// Stamp `generation` directly. Use when constructing a fresh
+    /// `Assembly` snapshot from a host that tracks its own version
+    /// counter (e.g., foldit's `EntityStore::head_assembly`): without
+    /// this, a freshly-built `Assembly::new` always starts at
+    /// generation 0 and downstream consumers that gate on the
+    /// counter (viso's `poll_assembly`) silently skip the second and
+    /// subsequent publishes.
+    pub fn set_generation(&mut self, generation: u64) {
+        self.generation = generation;
+    }
+
     /// Backbone hydrogen bonds (Kabsch-Sander) across all protein
     /// entities. Donor and acceptor indices refer to the flattened
     /// per-protein-entity backbone sequence produced by concatenating
@@ -194,6 +205,28 @@ impl Assembly {
     /// all derived data.
     pub fn add_entity(&mut self, entity: MoleculeEntity) {
         self.entities.push(Arc::new(entity));
+        self.after_mutation();
+    }
+
+    /// Replace an entity in place, preserving its position in the
+    /// internal vec. `entity.id()` must equal `id`. If `id` is not
+    /// present, the mutation is logged and skipped (generation not
+    /// advanced) — readers keep seeing the previous snapshot. Use
+    /// this rather than `remove_entity` + `add_entity` whenever the
+    /// goal is to swap a single entity's body without disturbing the
+    /// vec ordering of the rest.
+    pub fn replace_entity(&mut self, id: EntityId, entity: MoleculeEntity) {
+        debug_assert_eq!(
+            entity.id(),
+            id,
+            "replace_entity: entity.id() must match id",
+        );
+        let Some(idx) = self.entities.iter().position(|e| e.id() == id)
+        else {
+            log::error!("Assembly::replace_entity: unknown entity id {id}");
+            return;
+        };
+        self.entities[idx] = Arc::new(entity);
         self.after_mutation();
     }
 
@@ -412,7 +445,14 @@ mod tests {
         chain: u8,
         origin: Vec3,
     ) -> MoleculeEntity {
-        let id = alloc.allocate();
+        make_dipeptide_with_id(alloc.allocate(), chain, origin)
+    }
+
+    fn make_dipeptide_with_id(
+        id: EntityId,
+        chain: u8,
+        origin: Vec3,
+    ) -> MoleculeEntity {
         let atoms = vec![
             mk_atom(*b"N   ", Element::N, origin),
             mk_atom(*b"CA  ", Element::C, origin + Vec3::new(1.0, 0.0, 0.0)),
@@ -445,7 +485,14 @@ mod tests {
         chain: u8,
         sg_pos: Vec3,
     ) -> MoleculeEntity {
-        let id = alloc.allocate();
+        cys_residue_with_sg_with_id(alloc.allocate(), chain, sg_pos)
+    }
+
+    fn cys_residue_with_sg_with_id(
+        id: EntityId,
+        chain: u8,
+        sg_pos: Vec3,
+    ) -> MoleculeEntity {
         let atoms = vec![
             mk_atom(*b"N   ", Element::N, Vec3::new(0.0, 0.0, 0.0)),
             mk_atom(*b"CA  ", Element::C, Vec3::new(1.0, 0.0, 0.0)),
@@ -535,6 +582,81 @@ mod tests {
                 .length()
                 < 1e-6
         );
+    }
+
+    #[test]
+    fn replace_entity_preserves_vec_index() {
+        let mut alloc = EntityIdAllocator::new();
+        let a = make_dipeptide(&mut alloc, b'A', Vec3::ZERO);
+        let b = make_dipeptide(&mut alloc, b'B', Vec3::new(20.0, 0.0, 0.0));
+        let c = make_dipeptide(&mut alloc, b'C', Vec3::new(40.0, 0.0, 0.0));
+        let a_id = a.id();
+        let b_id = b.id();
+        let c_id = c.id();
+        let mut assembly = Assembly::new(vec![a, b, c]);
+
+        // Replace B with a fresh body at a moved origin. Same id, new bytes.
+        let b_replacement =
+            make_dipeptide_with_id(b_id, b'B', Vec3::new(60.0, 0.0, 0.0));
+        assembly.replace_entity(b_id, b_replacement);
+
+        // Order must be unchanged: A at 0, B at 1, C at 2.
+        assert_eq!(assembly.entities()[0].id(), a_id);
+        assert_eq!(assembly.entities()[1].id(), b_id);
+        assert_eq!(assembly.entities()[2].id(), c_id);
+
+        // The replacement bytes are visible at index 1.
+        let b_after = assembly.entities()[1].as_protein().unwrap();
+        assert!(
+            (b_after.atoms[0].position - Vec3::new(60.0, 0.0, 0.0)).length()
+                < 1e-6,
+        );
+    }
+
+    #[test]
+    fn replace_entity_unknown_id_is_a_no_op() {
+        let mut alloc = EntityIdAllocator::new();
+        let entity = make_dipeptide(&mut alloc, b'A', Vec3::ZERO);
+        let known_id = entity.id();
+        let mut assembly = Assembly::new(vec![entity]);
+        let before = assembly.generation();
+
+        // Mint an id that isn't in this assembly.
+        let mut other_alloc = EntityIdAllocator::new();
+        let unknown_id = other_alloc.from_raw(9_999);
+        let stranger =
+            make_dipeptide_with_id(unknown_id, b'Z', Vec3::new(99.0, 0.0, 0.0));
+        assembly.replace_entity(unknown_id, stranger);
+
+        // Generation unchanged; entity set unchanged.
+        assert_eq!(assembly.generation(), before);
+        assert_eq!(assembly.entities().len(), 1);
+        assert_eq!(assembly.entities()[0].id(), known_id);
+    }
+
+    #[test]
+    fn replace_entity_bumps_generation_and_recomputes_derived() {
+        let mut alloc = EntityIdAllocator::new();
+        let sg_a = Vec3::new(0.0, 0.0, 0.0);
+        let sg_b = Vec3::new(2.03, 0.0, 0.0);
+        let ca = cys_residue_with_sg(&mut alloc, b'A', sg_a);
+        let cb = cys_residue_with_sg(&mut alloc, b'B', sg_b);
+        let cb_id = cb.id();
+
+        let mut assembly = Assembly::new(vec![ca, cb]);
+        assert_eq!(assembly.cross_entity_bonds().len(), 1);
+        let before = assembly.generation();
+
+        // Replace B's CYS with one whose SG is too far for a disulfide.
+        let cb_far = cys_residue_with_sg_with_id(
+            cb_id,
+            b'B',
+            Vec3::new(50.0, 0.0, 0.0),
+        );
+        assembly.replace_entity(cb_id, cb_far);
+
+        assert_eq!(assembly.generation(), before + 1);
+        assert!(assembly.cross_entity_bonds().is_empty());
     }
 
     #[test]

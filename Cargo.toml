@@ -24,10 +24,14 @@ glam = "0.30"
 rmp = "0.8"
 flate2 = "1"
 log = "0.4"
+serde = { version = "1", features = ["derive"], optional = true }
+specta = { version = "=2.0.0-rc.25", features = ["derive"], optional = true }
 
 [features]
 default = []
 python = ["dep:pyo3", "dep:numpy"]
+serde = ["dep:serde"]
+specta = ["dep:specta"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
