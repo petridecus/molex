@@ -40,6 +40,21 @@ impl AtomName {
         let end = self.0.iter().position(|&b| b == 0).unwrap_or(4);
         core::str::from_utf8(&self.0[..end]).unwrap_or("")
     }
+
+    /// Whether this name denotes a protein backbone heavy atom
+    /// (`N`, `CA`, `C`, `O`, or terminal `OXT`). Returns `false` for
+    /// sidechain atoms and for non-protein atoms.
+    #[must_use]
+    pub fn is_protein_backbone(&self) -> bool {
+        is_protein_backbone_atom_name(self.as_str())
+    }
+}
+
+/// Whether a PDB atom-name string denotes a protein backbone heavy
+/// atom (`N`, `CA`, `C`, `O`, or terminal `OXT`).
+#[must_use]
+pub fn is_protein_backbone_atom_name(name: &str) -> bool {
+    matches!(name, "N" | "CA" | "C" | "O" | "OXT")
 }
 
 impl core::fmt::Display for AtomName {
