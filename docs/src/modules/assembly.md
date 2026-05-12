@@ -19,7 +19,7 @@ let assembly = Assembly::new(entities); // runs disulfide + DSSP + H-bond detect
 
 | Method | Returns | Description |
 |---|---|---|
-| `entities()` | `&[MoleculeEntity]` | All entities in declaration order |
+| `entities()` | `&[Arc<MoleculeEntity>]` | All entities in declaration order (`Arc` so cloning the slice is O(entities) of refcount bumps) |
 | `entity(id)` | `Option<&MoleculeEntity>` | Look up an entity by id |
 | `generation()` | `u64` | Monotonic counter, bumps on mutation |
 | `hbonds()` | `&[HBond]` | Backbone H-bonds across all proteins (flat sequence) |

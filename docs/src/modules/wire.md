@@ -6,9 +6,7 @@ bytes.
 
 ASSEM01 is entity-aware: it preserves per-entity molecule-type
 metadata so the decoder can reconstruct `MoleculeEntity` variants
-without re-running residue classification. It replaced the legacy
-COORDS01 format (which was retired entirely in the Phase 1/2 work
-documented in `docs/COORDS_RETIREMENT_PLAN.md`).
+without re-running residue classification.
 
 ## Public surface
 
@@ -32,7 +30,7 @@ assert_eq!(&bytes[0..8], ASSEMBLY_MAGIC);
 
 ## Byte layout
 
-```
+```text
 8 bytes:   magic "ASSEM01\0"
 4 bytes:   entity_count (u32 BE)
 Per entity header (5 bytes each):

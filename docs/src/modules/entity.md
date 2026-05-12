@@ -44,15 +44,31 @@ Residue names are mapped to molecule types by `classify_residue()` using built-i
 
 ```rust,ignore
 pub struct Atom {
-    pub position: Vec3,    // 3D position in angstroms
-    pub occupancy: f32,    // 0.0 to 1.0
-    pub b_factor: f32,     // temperature factor
-    pub element: Element,  // chemical element
-    pub name: [u8; 4],     // PDB atom name (e.g. b"CA  ")
+    pub position: Vec3,      // 3D position in angstroms
+    pub occupancy: f32,      // 0.0 to 1.0
+    pub b_factor: f32,       // temperature factor
+    pub element: Element,    // chemical element
+    pub name: [u8; 4],       // PDB atom name (e.g. b"CA  ")
+    pub formal_charge: i8,   // signed formal charge; 0 = neutral
 }
 ```
 
 Residue name, residue number, and chain ID are stored on the entity/residue that owns the atom.
+
+## Residue
+
+```rust,ignore
+pub struct Residue {
+    pub name: [u8; 3],                  // structural-side residue name (e.g. b"ALA")
+    pub label_seq_id: i32,              // mmCIF label_seq_id / PDB resSeq
+    pub auth_seq_id: Option<i32>,       // mmCIF auth_seq_id; None falls back to label_seq_id
+    pub auth_comp_id: Option<[u8; 3]>,  // mmCIF auth_comp_id; None falls back to name
+    pub ins_code: Option<u8>,           // PDB iCode / mmCIF pdbx_PDB_ins_code; None = blank
+    pub atom_range: Range<usize>,       // index range into the parent entity's atoms
+}
+```
+
+Internal grouping uses the `label_*` fields; user-facing output uses the `auth_*` fields, falling back to the `label_*` values when the author-side identifiers are absent.
 
 ## ProteinEntity
 
@@ -65,7 +81,8 @@ pub struct ProteinEntity {
     pub residues: Vec<Residue>,       // name, number, atom_range
     pub segment_breaks: Vec<usize>,   // backbone gap indices
     pub bonds: Vec<CovalentBond>,     // intra-entity bonds (AtomId endpoints)
-    pub pdb_chain_id: u8,
+    pub pdb_chain_id: u8,             // structural-side chain byte (label_asym_id)
+    pub auth_asym_id: Option<u8>,     // author-side chain byte; None = same as pdb_chain_id
 }
 ```
 
@@ -83,7 +100,7 @@ Bond filters:
 
 ## NAEntity
 
-A single DNA or RNA chain. Same structure as `ProteinEntity` (atoms, residues, segment breaks, intra-entity `bonds`, chain ID). Implements `Entity` and `Polymer`.
+A single DNA or RNA chain. Same overall shape as `ProteinEntity` — atoms, residues, segment breaks, intra-entity `bonds`, `pdb_chain_id`, and `auth_asym_id: Option<u8>`. The DNA-vs-RNA discriminator is carried in an extra `na_type: MoleculeType` field. Implements `Entity` and `Polymer`.
 
 ## SmallMoleculeEntity
 

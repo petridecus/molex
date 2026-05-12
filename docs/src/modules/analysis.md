@@ -99,3 +99,40 @@ use molex::analysis::{
 ```
 
 These power Gaussian density approximations, solvent-excluded surface SDFs, and cavity detection.
+
+## Transforms (`ops::transform`)
+
+Structural alignment and extraction utilities. Re-exported from
+`molex::ops`.
+
+```rust,ignore
+use molex::ops::{
+    align_to_reference, centroid, extract_backbone_segments,
+    extract_ca_from_chains, extract_ca_positions, kabsch_alignment,
+    kabsch_alignment_with_scale, transform_entities,
+    transform_entities_with_scale,
+};
+
+// Kabsch alignment (minimize RMSD between point sets)
+let (rotation, translation) = kabsch_alignment(&source, &target)?;
+let (rotation, translation, scale) =
+    kabsch_alignment_with_scale(&source, &target)?;
+
+// Apply transform to entities
+transform_entities(&mut entities, rotation, translation);
+transform_entities_with_scale(&mut entities, rotation, translation, scale);
+
+// Align entities to a reference structure
+align_to_reference(&mut mobile, &reference);
+
+// Extract alpha-carbon positions
+let ca_positions: Vec<Vec3> = extract_ca_positions(&entities);
+let ca_by_chain: Vec<Vec<Vec3>> = extract_ca_from_chains(&entities);
+
+// Get continuous backbone segments
+let segments: Vec<Vec<Vec3>> = extract_backbone_segments(&entities);
+
+// Compute centroid
+let center: Vec3 = centroid(&positions);
+```
+

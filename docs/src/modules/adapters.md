@@ -1,30 +1,47 @@
 # Adapters
 
-Format adapters live in `molex::adapters` (source: `src/adapters/`). Each adapter's primary API returns `Vec<MoleculeEntity>`. The legacy `Coords`-returning variants were retired with the COORDS01 wire format; see `docs/COORDS_RETIREMENT_PLAN.md`.
+Format adapters live in `molex::adapters` (source: `src/adapters/`). Each adapter's primary API returns `Vec<MoleculeEntity>`.
+
+Every structure parser feeds parser-emitted atom rows into the shared `EntityBuilder`, so chain/residue grouping, modified-residue merge logic, and entity classification are identical regardless of input format. Residues populate both their structural-side identifiers (`label_seq_id`, `name`) and the optional author-side identifiers from mmCIF / BinaryCIF (`auth_seq_id`, `auth_comp_id`, `ins_code`). `ProteinEntity` and `NAEntity` likewise carry an `auth_asym_id: Option<u8>` for the author-side chain label.
 
 ## PDB (`adapters::pdb`)
 
-Parses PDB files using the `pdbtbx` crate. Handles non-standard lines (GROMACS/MemProtMD output) via sanitization.
+Hand-rolled column-positional scanner over wwPDB v3.3 §9. Records other than `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER`, and `END` are skipped.
 
 ```rust,ignore
 pdb_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, AdapterError>
 pdb_str_to_entities(pdb_str: &str) -> Result<Vec<MoleculeEntity>, AdapterError>
 structure_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, AdapterError>
 
-// Writers (entity-direct; no Coords intermediate on the public path)
-assembly_to_pdb(assembly: &Assembly) -> String
-entities_to_pdb<E: Borrow<MoleculeEntity>>(entities: &[E]) -> String
+// Per-MODEL entry points (NMR ensembles, multi-state trajectories)
+pdb_str_to_all_models(pdb_str: &str)
+    -> Result<Vec<Vec<MoleculeEntity>>, AdapterError>
+pdb_file_to_all_models(path: &Path)
+    -> Result<Vec<Vec<MoleculeEntity>>, AdapterError>
+
+// Writers
+assembly_to_pdb(assembly: &Assembly) -> Result<String, AdapterError>
+entities_to_pdb<E: Borrow<MoleculeEntity>>(entities: &[E])
+    -> Result<String, AdapterError>
 ```
 
 `structure_file_to_entities` auto-detects PDB vs mmCIF by file extension (`.pdb`/`.ent` -> PDB, everything else -> mmCIF).
 
+The writers refuse to emit when the assembly exceeds any legacy PDB limit (>99,999 atoms, >62 polymer chains, >9,999 residues per chain), returning `AdapterError::InvalidFormat` so callers can switch to the mmCIF writer.
+
 ## mmCIF (`adapters::cif`)
 
-Custom DOM-based parser (no external crate). Parses CIF text into a DOM, then extracts atom sites via typed extractors.
+A streaming fast scanner handles the common case directly; a DOM-backed fallback covers structurally awkward files. Both paths emit `AtomRow` into `EntityBuilder`. The DOM types are also re-exported for typed extractors (`CoordinateData`, `ReflectionData`, `UnitCell`).
 
 ```rust,ignore
 mmcif_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, AdapterError>
 mmcif_str_to_entities(cif_str: &str) -> Result<Vec<MoleculeEntity>, AdapterError>
+
+// One entity list per pdbx_PDB_model_num
+mmcif_str_to_all_models(cif_str: &str)
+    -> Result<Vec<Vec<MoleculeEntity>>, AdapterError>
+mmcif_file_to_all_models(path: &Path)
+    -> Result<Vec<Vec<MoleculeEntity>>, AdapterError>
 ```
 
 ## BinaryCIF (`adapters::bcif`)
@@ -34,6 +51,12 @@ Decodes BinaryCIF (MessagePack-encoded CIF) with column-level codecs.
 ```rust,ignore
 bcif_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, AdapterError>
 bcif_to_entities(data: &[u8]) -> Result<Vec<MoleculeEntity>, AdapterError>
+
+// One entity list per pdbx_PDB_model_num
+bcif_to_all_models(bytes: &[u8])
+    -> Result<Vec<Vec<MoleculeEntity>>, AdapterError>
+bcif_file_to_all_models(path: &Path)
+    -> Result<Vec<Vec<MoleculeEntity>>, AdapterError>
 ```
 
 ## MRC/CCP4 density maps (`adapters::mrc`)
@@ -74,5 +97,3 @@ parse_file_full(path: &str) -> PyResult<PyObject>
 assembly_bytes_to_atom_array(bytes: Vec<u8>) -> PyResult<PyObject>
 assembly_bytes_to_atom_array_plus(bytes: Vec<u8>) -> PyResult<PyObject>
 ```
-
-The legacy `coords_to_atom_array` / `coords_to_atom_array_plus` / `atom_array_to_coords` functions were renamed to the `assembly_bytes_*` / `atom_array_to_entities` forms when the COORDS01 wire format was retired.

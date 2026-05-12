@@ -66,24 +66,26 @@ for hb in assembly.hbonds() {
 }
 ```
 
-## Serialize to COORDS binary (for FFI/IPC)
+## Serialize to ASSEM01 binary (for FFI/IPC)
 
 ```rust,ignore
-use molex::ops::codec::{serialize, merge_entities};
+use molex::ops::wire::assembly_bytes;
 
-let coords = merge_entities(&entities);
-let bytes = serialize(&coords)?;
+let bytes = assembly_bytes(&entities)?;
 // Send `bytes` over FFI, IPC, or network
 ```
+
+Pass an `Assembly` directly via `serialize_assembly(&assembly)` when the
+derived-data pipeline has already been run.
 
 ## Python usage
 
 ```python
 import molex
 
-# PDB round-trip
-coords_bytes = molex.pdb_to_coords(pdb_string)
-pdb_back = molex.coords_to_pdb(coords_bytes)
+# PDB round-trip via ASSEM01 bytes
+assembly_bytes = molex.pdb_to_assembly_bytes(pdb_string)
+pdb_back = molex.assembly_bytes_to_pdb(assembly_bytes)
 
 # Entity-aware AtomArray conversion (for ML pipelines)
 atom_array = molex.entities_to_atom_array(assembly_bytes)

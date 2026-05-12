@@ -2,7 +2,7 @@
 
 ## Overview
 
-```
+```text
                        ┌──────────────┐
  PDB / mmCIF / BCIF ──>│              ├──> Vec<MoleculeEntity>
  MRC / CCP4         ──>│   Adapters   ├──> Density (wraps VoxelGrid)
@@ -17,20 +17,20 @@
                   └──┬────────┬────────┬──┘
                      │        │        │
                      v        v        v
-              ┌──────────┐ ┌────────┐ ┌─────────┐
-              │ Analysis │ │  Ops   │ │  Codec  │
-              │          │ │        │ │         │
-              │ dssp     │ │ kabsch │ │serialize│
-              │ bonds    │ │ align  │ │serialize│
-              │ disulfide│ │extract │ │_assembly│
-              │ aabb     │ │        │ │         │
-              └──────────┘ └────────┘ └────┬────┘
-                                           │
-                                           v
-                                  FFI / IPC / Python
+              ┌──────────┐ ┌──────────┐ ┌──────────┐
+              │ Analysis │ │Transform │ │   Wire   │
+              │          │ │          │ │          │
+              │ dssp     │ │ kabsch   │ │ ASSEM01  │
+              │ bonds    │ │ align    │ │ serialize│
+              │ disulfide│ │ extract  │ │   /      │
+              │ aabb     │ │   ca     │ │deserialize│
+              └──────────┘ └──────────┘ └────┬─────┘
+                                             │
+                                             v
+                                    FFI / IPC / Python
 ```
 
-Analysis, Transform, and Codec are independent — use any combination depending on what you need.
+Analysis, Transform, and Wire are independent — use any combination depending on what you need.
 
 ## 1. Parsing
 
@@ -49,16 +49,20 @@ let density = mrc_file_to_density(Path::new("emd_1234.map"))?;
 let frames = dcd_file_to_frames(Path::new("trajectory.dcd"))?;
 ```
 
-## 2. Entity splitting
+## 2. Entity construction
 
-`split_into_entities` groups atoms by:
+Each parser tokenizes its input and pushes one `AtomRow` per atom into an
+`EntityBuilder`. `EntityBuilder` is the single point of classification: it
+groups rows by chain plus residue scope, joins mmCIF `_entity` /
+`_entity_poly` hints when present, and emits one `MoleculeEntity` per
+logical molecule (protein chain, NA chain, ligand instance, water bulk,
+solvent bulk) at `finish()`. Each emitted entity carries a freshly
+allocated `EntityId`.
 
-1. Chain ID + molecule type for polymers (one entity per chain)
-2. Chain ID + residue number for small molecules (one entity each)
-3. All waters into a single `Bulk` entity
-4. All solvents into a single `Bulk` entity
-
-Each entity gets a unique `EntityId`.
+For NMR ensembles or multi-model trajectories, the adapter-level
+`*_to_all_models` entry points (`pdb_str_to_all_models`,
+`mmcif_str_to_all_models`, `bcif_to_all_models`, plus the matching
+`_file_*` variants) return one `Vec<MoleculeEntity>` per MODEL.
 
 ## 3. Analysis
 
@@ -91,9 +95,12 @@ let ca_positions = extract_ca_positions(&entities);
 For sending to C/C++/Python consumers:
 
 ```rust,ignore
-// COORDS01 (flat atom array)
-let bytes = serialize(&merge_entities(&entities))?;
+use molex::ops::wire::{assembly_bytes, serialize_assembly};
 
-// ASSEM01 (preserves entity types)
-let bytes = serialize_assembly(&entities)?;
+// Serialize a raw entity slice
+let bytes = assembly_bytes(&entities)?;
+
+// Or serialize a fully-built Assembly (derived data is recomputed on
+// the deserialize side via Assembly::new)
+let bytes = serialize_assembly(&assembly)?;
 ```

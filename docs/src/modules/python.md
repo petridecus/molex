@@ -11,8 +11,7 @@ maturin develop --release --features python
 
 ## ASSEM01-based IO helpers (`python.rs`)
 
-These operate on serialized ASSEM01 bytes (entity-aware binary
-format). They replaced the retired COORDS01 helpers.
+These operate on serialized ASSEM01 bytes (entity-aware binary format).
 
 ```python
 import molex
@@ -70,21 +69,3 @@ assembly_bytes = molex.parse_file_to_entities("3nez.cif.gz")
 # Parse to AtomArray with full AtomWorks pipeline
 atom_array = molex.parse_file_full("3nez.cif.gz")
 ```
-
-## Retired bindings
-
-The following bindings existed historically but were removed when the
-COORDS01 wire format was retired. Migration targets are listed for any
-remaining callers:
-
-| Removed                       | Replacement                                |
-| ----------------------------- | ------------------------------------------ |
-| `pdb_to_coords`               | `pdb_to_assembly_bytes`                    |
-| `mmcif_to_coords`             | `mmcif_to_assembly_bytes`                  |
-| `coords_to_pdb`               | `assembly_bytes_to_pdb`                    |
-| `deserialize_coords_py`       | `deserialize_assembly_bytes`               |
-| `coords_to_atom_array`        | `assembly_bytes_to_atom_array`             |
-| `coords_to_atom_array_plus`   | `assembly_bytes_to_atom_array_plus`        |
-| `atom_array_to_coords`        | `atom_array_to_entities`                   |
-
-See `docs/COORDS_RETIREMENT_PLAN.md` for full context.
