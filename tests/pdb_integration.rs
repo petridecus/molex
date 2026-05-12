@@ -198,8 +198,10 @@ fn all_fixtures_parse_or_refuse_cleanly() {
         if path.extension().and_then(|e| e.to_str()) != Some("pdb") {
             continue;
         }
-        let name =
-            path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
         let is_bundle = name.contains("-pdb-bundle");
         match pdb_file_to_entities(&path) {
             Ok(es) => {

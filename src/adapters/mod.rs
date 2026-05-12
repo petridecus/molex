@@ -11,7 +11,10 @@ pub mod atomworks;
 
 // Entity-first re-exports.
 pub use bcif::{bcif_file_to_entities, bcif_to_entities};
-pub use cif::{mmcif_file_to_entities, mmcif_str_to_entities};
+pub use cif::{
+    mmcif_file_to_all_models, mmcif_file_to_entities, mmcif_str_to_all_models,
+    mmcif_str_to_entities,
+};
 pub use dcd::{dcd_file_to_frames, DcdFrame, DcdHeader, DcdReader};
 pub use mrc::{mrc_file_to_density, mrc_to_density};
 pub use pdb::{
