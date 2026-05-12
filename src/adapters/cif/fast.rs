@@ -667,10 +667,7 @@ impl<'a> Scanner<'a> {
         while cursor < self.len() {
             if self.bytes[cursor] == quote {
                 let next = self.bytes.get(cursor + 1).copied();
-                if next.is_none()
-                    || next
-                        .is_some_and(|b| b.is_ascii_whitespace() || b == b'#')
-                {
+                if next.is_none_or(|b| b.is_ascii_whitespace() || b == b'#') {
                     let val = self.input[start..cursor].to_owned();
                     self.pos = cursor + 1;
                     return Some(val);

@@ -330,8 +330,7 @@ fn resolve_element(bytes: &[u8], atom_name_str: &str) -> Element {
         return Element::from_atom_name(atom_name_str);
     }
     let parsed = std::str::from_utf8(trimmed)
-        .map(Element::from_symbol)
-        .unwrap_or(Element::Unknown);
+        .map_or(Element::Unknown, Element::from_symbol);
     if matches!(parsed, Element::Unknown) {
         Element::from_atom_name(atom_name_str)
     } else {

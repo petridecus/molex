@@ -208,7 +208,9 @@ pub extern "C" fn molex_free_bytes(bytes: *mut u8, len: usize) {
     if bytes.is_null() {
         return;
     }
-    drop(unsafe { Vec::from_raw_parts(bytes, len, len) });
+    drop(unsafe {
+        Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, len))
+    });
 }
 
 /// Free an assembly handle returned by a parser entry point.
