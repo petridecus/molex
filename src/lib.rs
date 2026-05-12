@@ -27,6 +27,9 @@ pub mod element;
 pub mod entity;
 pub mod ops;
 
+#[cfg(feature = "c-api")]
+pub mod c_api;
+
 #[cfg(feature = "python")]
 pub mod python;
 

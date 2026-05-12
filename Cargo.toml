@@ -12,7 +12,7 @@ categories = ["science", "parser-implementations", "data-structures"]
 
 [lib]
 name = "molex"
-crate-type = ["rlib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
@@ -26,11 +26,15 @@ log = "0.4"
 serde = { version = "1", features = ["derive"], optional = true }
 specta = { version = "=2.0.0-rc.25", features = ["derive"], optional = true }
 
+[build-dependencies]
+cbindgen = { version = "0.29", optional = true }
+
 [features]
 default = []
 python = ["dep:pyo3", "dep:numpy"]
 serde = ["dep:serde"]
 specta = ["dep:specta"]
+c-api = ["dep:cbindgen"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
