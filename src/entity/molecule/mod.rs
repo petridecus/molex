@@ -2,6 +2,7 @@
 
 /// Core atom type.
 pub mod atom;
+pub(crate) mod builder;
 /// Bulk entity (water, solvent).
 pub mod bulk;
 pub(crate) mod classify;
@@ -19,6 +20,13 @@ pub mod small_molecule;
 pub mod traits;
 
 pub use atom::Atom;
+#[allow(
+    unused_imports,
+    reason = "consumed by adapters during the Phase 3a/3b/3c cutover"
+)]
+pub(crate) use builder::{
+    AtomRow, BuildError, EntityBuilder, ExpectedEntityType,
+};
 pub use classify::classify_residue;
 use glam::Vec3;
 pub use id::{EntityId, EntityIdAllocator};
