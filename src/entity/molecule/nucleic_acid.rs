@@ -357,6 +357,7 @@ fn canonicalize_na_residues(
                 auth_comp_id: residue.auth_comp_id,
                 ins_code: residue.ins_code,
                 atom_range: start..end,
+                variants: residue.variants.clone(),
             });
         } else {
             let res_name = std::str::from_utf8(&residue.name).unwrap_or("???");
@@ -545,6 +546,7 @@ mod tests {
             auth_comp_id: None,
             ins_code: None,
             atom_range: 0..atoms.len(),
+            variants: Vec::new(),
         }];
         let mut alloc = EntityIdAllocator::new();
         let id = alloc.allocate();
@@ -608,6 +610,7 @@ mod tests {
             auth_comp_id: None,
             ins_code: None,
             atom_range: 0..atoms.len(),
+            variants: Vec::new(),
         }];
         let mut alloc = EntityIdAllocator::new();
         let id = alloc.allocate();

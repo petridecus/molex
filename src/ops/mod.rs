@@ -2,10 +2,13 @@
 
 /// Adapter / wire error type and protein-CA helper.
 pub mod codec;
+/// Typed Assembly edits + apply path.
+pub mod edit;
 pub mod transform;
-/// ASSEM01 binary wire format encoder/decoder.
+/// ASSEM binary wire format encoder/decoder (ASSEM01 / ASSEM02).
 pub mod wire;
 
+pub use edit::{AssemblyEdit, BulkEditError, EditError};
 pub use transform::{
     align_to_reference, centroid, extract_backbone_segments,
     extract_ca_from_chains, extract_ca_positions, kabsch_alignment,

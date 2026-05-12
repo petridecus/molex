@@ -44,6 +44,7 @@ fn residue(name: &str, seq: i32, range: std::ops::Range<usize>) -> Residue {
         auth_comp_id: None,
         ins_code: None,
         atom_range: range,
+        variants: Vec::new(),
     }
 }
 
@@ -82,7 +83,7 @@ fn assembly_bytes_roundtrip_mixed() {
 
     let entities = vec![protein, ligand, zinc];
     let bytes = assembly_bytes(&entities).unwrap();
-    assert_eq!(&bytes[0..8], b"ASSEM01\0");
+    assert_eq!(&bytes[0..8], b"ASSEM02\0");
 
     let roundtripped = deserialize_assembly(&bytes).unwrap();
     assert_eq!(roundtripped.entities().len(), entities.len());
@@ -159,12 +160,14 @@ fn assembly_byte_layout() {
     let entities = vec![protein];
     let bytes = assembly_bytes(&entities).unwrap();
 
-    // 8 magic + 4 count + 5 per-entity header + 4 atoms * 26 = 121.
-    assert_eq!(&bytes[0..8], b"ASSEM01\0");
+    // 8 magic + 4 count + 9 per-entity header + 4 atoms * 26
+    // + 4 variant-count u32 (zero, no variants on this residue).
+    assert_eq!(&bytes[0..8], b"ASSEM02\0");
     assert_eq!(u32::from_be_bytes(bytes[8..12].try_into().unwrap()), 1);
     assert_eq!(bytes[12], 0); // Protein
     assert_eq!(u32::from_be_bytes(bytes[13..17].try_into().unwrap()), 4);
-    assert_eq!(bytes.len(), 8 + 4 + 5 + 4 * 26);
+    // bytes[17..21] is the 4-byte entity_id (originator's raw value).
+    assert_eq!(bytes.len(), 8 + 4 + 9 + 4 * 26 + 4);
 }
 
 #[test]
@@ -257,4 +260,142 @@ fn deserialize_assembly_truncated_atom_data() {
     bytes.push(0); // Protein type
     bytes.extend_from_slice(&1u32.to_be_bytes()); // 1 atom, no atom data
     assert!(deserialize_assembly(&bytes).is_err());
+}
+
+#[test]
+fn assem01_back_compat_read_succeeds_with_empty_variants() {
+    // Construct a minimal ASSEM01 byte stream by hand (5-byte
+    // per-entity header, no entity_id, no variants trailer) and verify
+    // the deserializer accepts it under the back-compat path.
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"ASSEM01\0");
+    bytes.extend_from_slice(&1u32.to_be_bytes()); // entity_count = 1
+    bytes.push(0); // mol_type = Protein
+    bytes.extend_from_slice(&4u32.to_be_bytes()); // atom_count = 4
+
+    // 4 ASSEM01 atom rows for an ALA residue (26 bytes each).
+    for atom in ala_residue_atoms(1.0) {
+        bytes.extend_from_slice(&atom.position.x.to_be_bytes());
+        bytes.extend_from_slice(&atom.position.y.to_be_bytes());
+        bytes.extend_from_slice(&atom.position.z.to_be_bytes());
+        bytes.push(b'A'); // chain_id
+        bytes.extend_from_slice(&res_bytes("ALA")); // res_name
+        bytes.extend_from_slice(&1i32.to_be_bytes()); // res_num (= label_seq_id)
+        bytes.extend_from_slice(&atom.name); // atom_name (4 bytes)
+        let sym = atom.element.symbol().as_bytes();
+        bytes.push(sym.first().copied().unwrap_or(b'X'));
+        bytes.push(sym.get(1).copied().unwrap_or(0));
+    }
+
+    let rt = deserialize_assembly(&bytes).unwrap();
+    let rt_protein = rt.entities()[0].as_protein().unwrap();
+    assert_eq!(rt_protein.residues.len(), 1);
+    assert!(rt_protein.residues[0].variants.is_empty());
+}
+
+#[test]
+fn assem02_preserves_entity_id_across_roundtrip() {
+    // Allocate a few EntityIds so the test entity has a non-zero id;
+    // round-trip must preserve it.
+    let mut alloc = EntityIdAllocator::new();
+    let _ = alloc.allocate();
+    let _ = alloc.allocate();
+    let id = alloc.allocate(); // EntityId(2)
+
+    let protein = MoleculeEntity::Protein(ProteinEntity::new(
+        id,
+        ala_residue_atoms(0.0),
+        vec![residue("ALA", 1, 0..4)],
+        b'A',
+        None,
+    ));
+
+    let bytes = assembly_bytes(&[protein]).unwrap();
+    let rt = deserialize_assembly(&bytes).unwrap();
+    assert_eq!(rt.entities()[0].id(), id);
+}
+
+#[test]
+fn variants_roundtrip_through_assem02() {
+    use crate::chemistry::variant::{ProtonationState, VariantTag};
+
+    let id = EntityIdAllocator::new().allocate();
+    let atoms = {
+        let mut v = ala_residue_atoms(1.0);
+        v.extend(ala_residue_atoms(5.0));
+        v
+    };
+    // Residue 1: protonation HisEpsilon + Disulfide.
+    // Residue 2: NTerminus + Other("custom-tag").
+    let mut r1 = residue("HIS", 1, 0..4);
+    r1.variants = vec![
+        VariantTag::Protonation(ProtonationState::HisEpsilon),
+        VariantTag::Disulfide,
+    ];
+    let mut r2 = residue("ALA", 2, 4..8);
+    r2.variants = vec![
+        VariantTag::NTerminus,
+        VariantTag::Other("custom-tag".to_owned()),
+    ];
+
+    let protein = MoleculeEntity::Protein(ProteinEntity::new(
+        id,
+        atoms,
+        vec![r1, r2],
+        b'A',
+        None,
+    ));
+
+    let bytes = assembly_bytes(&[protein]).unwrap();
+    let rt = deserialize_assembly(&bytes).unwrap();
+    let rt_protein = rt.entities()[0].as_protein().unwrap();
+
+    assert_eq!(rt_protein.residues[0].variants.len(), 2);
+    assert!(matches!(
+        rt_protein.residues[0].variants[0],
+        VariantTag::Protonation(ProtonationState::HisEpsilon),
+    ));
+    assert!(matches!(
+        rt_protein.residues[0].variants[1],
+        VariantTag::Disulfide,
+    ));
+
+    assert_eq!(rt_protein.residues[1].variants.len(), 2);
+    assert!(matches!(
+        rt_protein.residues[1].variants[0],
+        VariantTag::NTerminus,
+    ));
+    assert!(
+        matches!(&rt_protein.residues[1].variants[1], VariantTag::Other(s) if s == "custom-tag"),
+    );
+}
+
+#[test]
+fn variants_protonation_custom_string_roundtrip() {
+    use crate::chemistry::variant::{ProtonationState, VariantTag};
+
+    let id = EntityIdAllocator::new().allocate();
+    let atoms = ala_residue_atoms(1.0);
+    let mut r = residue("ASP", 1, 0..4);
+    r.variants = vec![VariantTag::Protonation(ProtonationState::Custom(
+        "ASP_PROTONATED".to_owned(),
+    ))];
+
+    let protein = MoleculeEntity::Protein(ProteinEntity::new(
+        id,
+        atoms,
+        vec![r],
+        b'A',
+        None,
+    ));
+
+    let bytes = assembly_bytes(&[protein]).unwrap();
+    let rt = deserialize_assembly(&bytes).unwrap();
+    let rt_protein = rt.entities()[0].as_protein().unwrap();
+
+    assert!(matches!(
+        &rt_protein.residues[0].variants[0],
+        VariantTag::Protonation(ProtonationState::Custom(s))
+            if s == "ASP_PROTONATED",
+    ));
 }

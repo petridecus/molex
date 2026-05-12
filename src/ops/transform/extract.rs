@@ -98,6 +98,7 @@ mod tests {
             auth_comp_id: None,
             ins_code: None,
             atom_range: range,
+            variants: Vec::new(),
         }
     }
 

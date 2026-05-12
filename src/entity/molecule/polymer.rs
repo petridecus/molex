@@ -2,6 +2,8 @@
 
 use std::ops::Range;
 
+use crate::chemistry::variant::VariantTag;
+
 /// A single residue within a polymer entity.
 ///
 /// Carries both the structural-side identifier (`label_seq_id`) and the
@@ -27,4 +29,10 @@ pub struct Residue {
     pub ins_code: Option<u8>,
     /// Index range into the parent entity's atom list.
     pub atom_range: Range<usize>,
+    /// Chemistry variants attached to this residue (terminus patches,
+    /// disulfide participation, protonation state). Default-empty.
+    /// Parsers populate this from format-specific tags when available;
+    /// most parsers leave it empty and let downstream consumers
+    /// re-derive what they need.
+    pub variants: Vec<VariantTag>,
 }

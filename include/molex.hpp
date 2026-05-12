@@ -47,8 +47,16 @@ class Assembly;
 class Entity;
 class Residue;
 class Atom;
+class EditList;
 
 template <typename T> class IndexedView;
+
+// Re-export C-side payload types so callers can spell them as
+// `molex::AtomRow`, `molex::Variant`, etc.
+using AtomRow = ::molex_AtomRow;
+using Variant = ::molex_Variant;
+using VariantKind = ::molex_VariantKind;
+using ProtonationKind = ::molex_ProtonationKind;
 
 // ---------------------------------------------------------------------------
 // MoleculeType (alias to the C enum so callers write `molex::MoleculeType`)
@@ -424,6 +432,22 @@ class Assembly {
     return out;
   }
 
+  /// Apply every edit in `edits` to this assembly in order. Returns
+  /// `false` on the first failure; edits applied before the failing
+  /// one stay applied. See `molex::last_error_message()` for details.
+  bool apply_edits(const EditList& edits);
+
+  /// Decode DELTA01 bytes and apply them in one call. Equivalent to
+  /// `EditList::from_delta01` + `apply_edits` + drop, but avoids the
+  /// intermediate handle on the apply hot path.
+  bool apply_delta01(const std::uint8_t* bytes, std::size_t len) {
+    return ::molex_assembly_apply_delta01(handle_, bytes, len) == MOLEX_OK;
+  }
+
+  bool apply_delta01(const std::vector<std::uint8_t>& bytes) {
+    return apply_delta01(bytes.data(), bytes.size());
+  }
+
   std::uint64_t generation() const noexcept {
     return ::molex_assembly_generation(handle_);
   }
@@ -458,6 +482,133 @@ class Assembly {
 
   ::molex_Assembly* handle_ = nullptr;
 };
+
+// ---------------------------------------------------------------------------
+// EditList: owning RAII handle over `molex_EditList`. Move-only.
+// ---------------------------------------------------------------------------
+
+class EditList {
+ public:
+  EditList() : handle_(::molex_edits_new()) {}
+
+  ~EditList() { reset(); }
+
+  EditList(const EditList&) = delete;
+  EditList& operator=(const EditList&) = delete;
+
+  EditList(EditList&& other) noexcept : handle_(other.handle_) {
+    other.handle_ = nullptr;
+  }
+  EditList& operator=(EditList&& other) noexcept {
+    if (this != &other) {
+      reset();
+      handle_ = other.handle_;
+      other.handle_ = nullptr;
+    }
+    return *this;
+  }
+
+  /// Number of edits currently in this list.
+  std::size_t count() const noexcept {
+    return ::molex_edits_count(handle_);
+  }
+
+  /// Append a `SetEntityCoords` edit. Returns `false` on failure.
+  bool push_set_entity_coords(
+      std::uint32_t entity_id,
+      const float* coords_xyz,
+      std::size_t coord_count) {
+    return ::molex_edits_push_set_entity_coords(
+               handle_, entity_id, coords_xyz, coord_count) == MOLEX_OK;
+  }
+
+  /// Append a `SetResidueCoords` edit. Returns `false` on failure.
+  bool push_set_residue_coords(
+      std::uint32_t entity_id,
+      std::size_t residue_idx,
+      const float* coords_xyz,
+      std::size_t coord_count) {
+    return ::molex_edits_push_set_residue_coords(
+               handle_, entity_id, residue_idx, coords_xyz, coord_count)
+        == MOLEX_OK;
+  }
+
+  /// Append a `MutateResidue` edit. `new_name` must point to 3 bytes;
+  /// `atoms` and `variants` are borrowed for the duration of the call.
+  bool push_mutate_residue(
+      std::uint32_t entity_id,
+      std::size_t residue_idx,
+      const std::uint8_t* new_name_3,
+      const AtomRow* atoms,
+      std::size_t atom_count,
+      const Variant* variants,
+      std::size_t variant_count) {
+    return ::molex_edits_push_mutate_residue(
+               handle_, entity_id, residue_idx, new_name_3, atoms,
+               atom_count, variants, variant_count) == MOLEX_OK;
+  }
+
+  /// Append a `SetVariants` edit.
+  bool push_set_variants(
+      std::uint32_t entity_id,
+      std::size_t residue_idx,
+      const Variant* variants,
+      std::size_t variant_count) {
+    return ::molex_edits_push_set_variants(
+               handle_, entity_id, residue_idx, variants, variant_count)
+        == MOLEX_OK;
+  }
+
+  /// Serialize this list as DELTA01 bytes. Empty optional on failure
+  /// (e.g., when the list contains a topology edit). See
+  /// `molex::last_error_message()` for details.
+  std::optional<std::vector<std::uint8_t>> to_delta01() const {
+    std::uint8_t* buf = nullptr;
+    std::size_t len = 0;
+    if (::molex_edits_to_delta01(handle_, &buf, &len) != MOLEX_OK) {
+      return std::nullopt;
+    }
+    std::vector<std::uint8_t> out(buf, buf + len);
+    ::molex_free_bytes(buf, len);
+    return out;
+  }
+
+  /// Decode DELTA01 bytes into a new edit list. Empty optional on
+  /// failure.
+  static std::optional<EditList> from_delta01(
+      const std::uint8_t* bytes, std::size_t len) {
+    ::molex_EditList* h = ::molex_delta01_to_edits(bytes, len);
+    if (h == nullptr) {
+      return std::nullopt;
+    }
+    return EditList{h};
+  }
+
+  static std::optional<EditList> from_delta01(
+      const std::vector<std::uint8_t>& bytes) {
+    return from_delta01(bytes.data(), bytes.size());
+  }
+
+  const ::molex_EditList* handle() const noexcept { return handle_; }
+
+ private:
+  explicit EditList(::molex_EditList* h) : handle_(h) {}
+
+  void reset() noexcept {
+    if (handle_ != nullptr) {
+      ::molex_edits_free(handle_);
+      handle_ = nullptr;
+    }
+  }
+
+  ::molex_EditList* handle_ = nullptr;
+};
+
+// Assembly::apply_edits — out-of-class since it depends on the full
+// EditList declaration.
+inline bool Assembly::apply_edits(const EditList& edits) {
+  return ::molex_assembly_apply_edits(handle_, edits.handle()) == MOLEX_OK;
+}
 
 }  // namespace molex
 

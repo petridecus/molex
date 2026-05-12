@@ -26,6 +26,78 @@
 #define MOLEX_ERR_NULL -2
 
 /**
+ * Variant tag kind discriminant on the C boundary.
+ */
+enum molex_VariantKind
+#ifdef __cplusplus
+  : int32_t
+#endif // __cplusplus
+ {
+  /**
+   * Chain N-terminus patch.
+   */
+  MOLEX_VARIANT_KIND_N_TERMINUS = 1,
+  /**
+   * Chain C-terminus patch.
+   */
+  MOLEX_VARIANT_KIND_C_TERMINUS = 2,
+  /**
+   * Participates in a disulfide bond.
+   */
+  MOLEX_VARIANT_KIND_DISULFIDE = 3,
+  /**
+   * Non-canonical protonation. Reads
+   * `molex_Variant::protonation`.
+   */
+  MOLEX_VARIANT_KIND_PROTONATION = 4,
+  /**
+   * Open-ended tag carrying a UTF-8 string in
+   * `molex_Variant::{str_ptr, str_len}`.
+   */
+  MOLEX_VARIANT_KIND_OTHER = 254,
+};
+#ifndef __cplusplus
+typedef int32_t molex_VariantKind;
+#endif // __cplusplus
+
+/**
+ * Protonation state discriminant. Read only when `kind ==
+ * Protonation`. For `Custom`, the string in
+ * `molex_Variant::{str_ptr, str_len}` carries the variant name.
+ */
+enum molex_ProtonationKind
+#ifdef __cplusplus
+  : int32_t
+#endif // __cplusplus
+ {
+  /**
+   * `HID` — delta-protonated histidine.
+   */
+  MOLEX_PROTONATION_KIND_HIS_DELTA = 1,
+  /**
+   * `HIE` — epsilon-protonated histidine.
+   */
+  MOLEX_PROTONATION_KIND_HIS_EPSILON = 2,
+  /**
+   * `HIP` — doubly-protonated histidine.
+   */
+  MOLEX_PROTONATION_KIND_HIS_DOUBLY = 3,
+  /**
+   * Anything else; payload string carries the variant name.
+   */
+  MOLEX_PROTONATION_KIND_CUSTOM = 255,
+  /**
+   * Default placeholder when `kind != Protonation`. The push
+   * functions ignore this field unless the variant kind is
+   * `Protonation`.
+   */
+  MOLEX_PROTONATION_KIND_UNUSED = 0,
+};
+#ifndef __cplusplus
+typedef int32_t molex_ProtonationKind;
+#endif // __cplusplus
+
+/**
  * Discriminant for an entity's molecule classification across the FFI
  * boundary. Stable integer codes so C consumers can pattern-match
  * without depending on Rust's enum layout.
@@ -87,6 +159,13 @@ typedef struct molex_Assembly molex_Assembly;
 typedef struct molex_Atom molex_Atom;
 
 /**
+ * Owned, ordered list of typed Assembly edits. Free with
+ * [`molex_edits_free`]. Opaque (no field-level introspection from C);
+ * use [`molex_edits_to_delta01`] to dump to wire bytes for inspection.
+ */
+typedef struct molex_EditList molex_EditList;
+
+/**
  * Non-owning view of a single entity within an assembly.
  */
 typedef struct molex_Entity molex_Entity;
@@ -95,6 +174,64 @@ typedef struct molex_Entity molex_Entity;
  * Non-owning view of a single polymer residue within an entity.
  */
 typedef struct molex_Residue molex_Residue;
+
+/**
+ * One atom row crossed-over to C. Layout mirrors the ASSEM02 atom
+ * row (12 + 4 + 2 = 18 bytes excluding chain/residue context which
+ * is conveyed separately).
+ */
+typedef struct {
+  /**
+   * X coordinate.
+   */
+  float position_x;
+  /**
+   * Y coordinate.
+   */
+  float position_y;
+  /**
+   * Z coordinate.
+   */
+  float position_z;
+  /**
+   * PDB atom name, space-padded.
+   */
+  uint8_t name[4];
+  /**
+   * Element symbol, null-padded if 1 character (e.g. `['C', 0]`).
+   */
+  uint8_t element[2];
+} molex_AtomRow;
+
+/**
+ * One variant tag as crossed-over to C.
+ */
+typedef struct {
+  /**
+   * Discriminant.
+   */
+  molex_VariantKind kind;
+  /**
+   * Protonation sub-discriminant. Read only when `kind ==
+   * Protonation`.
+   */
+  molex_ProtonationKind protonation;
+  /**
+   * UTF-8 bytes for `Other` and `Protonation::Custom`. Borrowed for
+   * the duration of the call.
+   */
+  const uint8_t *str_ptr;
+  /**
+   * Length of `str_ptr` in bytes.
+   */
+  uintptr_t str_len;
+} molex_Variant;
+
+/**
+ * Magic emitted by the current serializer. Alias for the latest
+ * supported version.
+ */
+#define ASSEMBLY_MAGIC ASSEMBLY_MAGIC_V2
 
 #ifdef __cplusplus
 extern "C" {
@@ -215,6 +352,126 @@ int32_t molex_assembly_to_assem01(const molex_Assembly *assembly,
 int32_t molex_assembly_to_pdb(const molex_Assembly *assembly,
                               uint8_t **out_buf,
                               uintptr_t *out_len)
+;
+
+/**
+ * Construct an empty edit list.
+ */
+
+molex_EditList *molex_edits_new(void)
+;
+
+/**
+ * Free an edit list returned by `molex_edits_new` or
+ * `molex_delta01_to_edits`. Safe to call with a null pointer (no-op).
+ */
+
+void molex_edits_free(molex_EditList *list)
+;
+
+/**
+ * Number of edits currently in the list. Returns 0 if `list` is null.
+ */
+
+uintptr_t molex_edits_count(const molex_EditList *list)
+;
+
+/**
+ * Append a `SetEntityCoords` edit to `list`. `coords_xyz` must point
+ * to `coord_count * 3` floats (x,y,z,x,y,z,...).
+ */
+
+int32_t molex_edits_push_set_entity_coords(molex_EditList *list,
+                                           uint32_t entity_id,
+                                           const float *coords_xyz,
+                                           uintptr_t coord_count)
+;
+
+/**
+ * Append a `SetResidueCoords` edit to `list`.
+ */
+
+int32_t molex_edits_push_set_residue_coords(molex_EditList *list,
+                                            uint32_t entity_id,
+                                            uintptr_t residue_idx,
+                                            const float *coords_xyz,
+                                            uintptr_t coord_count)
+;
+
+/**
+ * Append a `MutateResidue` edit to `list`. `new_name` is a 3-byte
+ * (space-padded) residue name. `atoms` carries the new atom list;
+ * `variants` carries the residue's variant tags.
+ */
+
+int32_t molex_edits_push_mutate_residue(molex_EditList *list,
+                                        uint32_t entity_id,
+                                        uintptr_t residue_idx,
+                                        const uint8_t *new_name,
+                                        const molex_AtomRow *atoms,
+                                        uintptr_t atom_count,
+                                        const molex_Variant *variants,
+                                        uintptr_t variant_count)
+;
+
+/**
+ * Append a `SetVariants` edit to `list`.
+ */
+
+int32_t molex_edits_push_set_variants(molex_EditList *list,
+                                      uint32_t entity_id,
+                                      uintptr_t residue_idx,
+                                      const molex_Variant *variants,
+                                      uintptr_t variant_count)
+;
+
+/**
+ * Serialize the edit list to DELTA01 bytes.
+ *
+ * On success returns [`MOLEX_OK`] and writes the heap-allocated
+ * buffer pointer + length to `out_buf` / `out_len`; caller frees with
+ * `molex_free_bytes`.
+ */
+
+int32_t molex_edits_to_delta01(const molex_EditList *list,
+                               uint8_t **out_buf,
+                               uintptr_t *out_len)
+;
+
+/**
+ * Decode DELTA01 bytes into a new edit list.
+ *
+ * Returns null on failure with the error message available via
+ * `molex_last_error_message`. Caller frees with `molex_edits_free`.
+ */
+
+molex_EditList *molex_delta01_to_edits(const uint8_t *bytes_ptr,
+                                       uintptr_t len)
+;
+
+/**
+ * Apply every edit in `list` to `assembly` in order. Stops at the
+ * first failure and returns nonzero; edits applied before the
+ * failing one stay applied (each having bumped the generation
+ * counter).
+ */
+
+int32_t molex_assembly_apply_edits(molex_Assembly *assembly,
+                                   const molex_EditList *list)
+;
+
+/**
+ * Decode DELTA01 bytes and apply them to `assembly`.
+ *
+ * Equivalent to calling `molex_delta01_to_edits` then
+ * `molex_assembly_apply_edits` then `molex_edits_free`, but avoids
+ * the round-trip through a separate list handle on the apply hot
+ * path.
+ */
+
+int32_t molex_assembly_apply_delta01(molex_Assembly *assembly,
+                                     const uint8_t *bytes_ptr,
+                                     uintptr_t len)
 ;
 
 /**

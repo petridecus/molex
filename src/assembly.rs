@@ -304,6 +304,21 @@ impl Assembly {
         self.after_mutation();
     }
 
+    /// Mutable slice of the entity list. Crate-internal; reserved for
+    /// the `ops::edit` apply path which needs `Arc::make_mut` access
+    /// to individual entities while running its own derived-data
+    /// bookkeeping via [`Self::after_mutation_pub`].
+    pub(crate) fn entities_mut(&mut self) -> &mut [Arc<MoleculeEntity>] {
+        &mut self.entities
+    }
+
+    /// Bump generation and recompute derived data. Crate-internal
+    /// counterpart to the private `after_mutation` for the
+    /// `ops::edit` apply functions.
+    pub(crate) fn after_mutation_pub(&mut self) {
+        self.after_mutation();
+    }
+
     // -- Internal helpers --------------------------------------------
 
     fn after_mutation(&mut self) {

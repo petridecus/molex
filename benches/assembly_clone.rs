@@ -72,6 +72,7 @@ fn make_chain(
             auth_comp_id: None,
             ins_code: None,
             atom_range: start..atoms.len(),
+            variants: Vec::new(),
         });
     }
     MoleculeEntity::Protein(ProteinEntity::new(

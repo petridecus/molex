@@ -54,6 +54,7 @@
               source, cbindgen output, and C consumer code."
 )]
 
+pub mod edit;
 pub mod walk;
 
 use std::cell::RefCell;
@@ -246,6 +247,15 @@ pub(crate) fn assembly_inner<'a>(
         return None;
     }
     Some(unsafe { &*assembly.cast::<Assembly>() })
+}
+
+pub(crate) fn assembly_inner_mut<'a>(
+    assembly: *mut molex_Assembly,
+) -> Option<&'a mut Assembly> {
+    if assembly.is_null() {
+        return None;
+    }
+    Some(unsafe { &mut *assembly.cast::<Assembly>() })
 }
 
 fn slice_from_raw<'a, T>(ptr: *const T, len: usize) -> Option<&'a [T]> {

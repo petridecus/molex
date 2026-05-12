@@ -58,6 +58,7 @@ fn make_dipeptide_with_id(
             auth_comp_id: None,
             ins_code: None,
             atom_range: 0..5,
+            variants: Vec::new(),
         },
         Residue {
             name: *b"GLY",
@@ -66,6 +67,7 @@ fn make_dipeptide_with_id(
             auth_comp_id: None,
             ins_code: None,
             atom_range: 5..9,
+            variants: Vec::new(),
         },
     ];
     MoleculeEntity::Protein(ProteinEntity::new(
@@ -102,6 +104,7 @@ fn cys_residue_with_sg_with_id(
         auth_comp_id: None,
         ins_code: None,
         atom_range: 0..atoms.len(),
+        variants: Vec::new(),
     }];
     MoleculeEntity::Protein(ProteinEntity::new(
         id, atoms, residues, chain, None,

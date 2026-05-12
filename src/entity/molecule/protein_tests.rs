@@ -39,6 +39,7 @@ fn residue(name: &str, seq: i32, range: std::ops::Range<usize>) -> Residue {
         auth_comp_id: None,
         ins_code: None,
         atom_range: range,
+        variants: Vec::new(),
     }
 }
 

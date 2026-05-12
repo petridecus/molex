@@ -402,6 +402,7 @@ fn canonicalize_protein_residues(
                 auth_comp_id: residue.auth_comp_id,
                 ins_code: residue.ins_code,
                 atom_range: start..end,
+                variants: residue.variants.clone(),
             });
         } else {
             let res_name = std::str::from_utf8(&residue.name).unwrap_or("???");

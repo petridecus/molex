@@ -190,6 +190,7 @@ fn into_atoms_and_residues(
                     auth_comp_id: None,
                     ins_code: None,
                     atom_range: current_start..atoms.len(),
+                    variants: Vec::new(),
                 });
             }
             current_start = atoms.len();
@@ -206,6 +207,7 @@ fn into_atoms_and_residues(
             auth_comp_id: None,
             ins_code: None,
             atom_range: current_start..atoms.len(),
+            variants: Vec::new(),
         });
     }
 

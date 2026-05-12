@@ -330,6 +330,7 @@ fn flatten_residues<'a>(
             auth_comp_id: r.auth_comp_id,
             ins_code: r.ins_code,
             atom_range: start..end,
+            variants: Vec::new(),
         });
     }
     (atoms, out_residues)

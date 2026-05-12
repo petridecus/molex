@@ -88,5 +88,11 @@ fn molex(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(adapters::atomworks::parse_file_full, m)?)?;
 
+    // Handle-based edit / DELTA01 surface (parallels c_api::edit).
+    m.add_class::<python::PyAssembly>()?;
+    m.add_class::<python::PyEditList>()?;
+    m.add_class::<python::PyVariant>()?;
+    m.add_class::<python::PyAtomRow>()?;
+
     Ok(())
 }

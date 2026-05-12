@@ -1,17 +1,32 @@
-//! ASSEM01 binary wire format: encoder, decoder, header constants.
+//! ASSEM binary wire format: encoder, decoder, header constants.
 //!
-//! The wire format carries entity headers (molecule type + atom count) plus
-//! 26-byte atom rows. See [`crate::ops::wire::serialize_assembly`] for the
-//! byte layout.
+//! Current version is ASSEM02 (carries per-residue variant tags after the
+//! atom payload). ASSEM01 (no variants) is still accepted by the
+//! deserializer and is treated as if every residue had empty variants —
+//! existing readers that emit ASSEM01 bytes continue to round-trip
+//! through molex without code changes.
+//!
+//! See [`crate::ops::wire::serialize_assembly`] for the byte layout.
 
+pub mod delta;
 pub(crate) mod deserialize;
 pub(crate) mod serialize;
+pub(crate) mod variants;
 
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
 use crate::ops::codec::AdapterError;
 
-/// Magic header bytes identifying the ASSEM01 assembly binary format.
-pub const ASSEMBLY_MAGIC: &[u8; 8] = b"ASSEM01\0";
+/// Magic header bytes identifying the legacy ASSEM01 binary format
+/// (atoms only, no per-residue variants).
+pub const ASSEMBLY_MAGIC_V1: &[u8; 8] = b"ASSEM01\0";
+
+/// Magic header bytes for the current ASSEM02 binary format. Carries a
+/// trailing variants section after the atom payload.
+pub const ASSEMBLY_MAGIC_V2: &[u8; 8] = b"ASSEM02\0";
+
+/// Magic emitted by the current serializer. Alias for the latest
+/// supported version.
+pub const ASSEMBLY_MAGIC: &[u8; 8] = ASSEMBLY_MAGIC_V2;
 
 /// Encode a `MoleculeType` to its ASSEM01 wire byte.
 pub(crate) fn molecule_type_to_wire(mol_type: MoleculeType) -> u8 {

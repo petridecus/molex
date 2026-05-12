@@ -138,6 +138,7 @@ mod tests {
             auth_comp_id: None,
             ins_code: None,
             atom_range: 0..atoms.len(),
+            variants: Vec::new(),
         };
         (atoms, residue)
     }
@@ -200,6 +201,7 @@ mod tests {
             auth_comp_id: None,
             ins_code: None,
             atom_range: 0..atoms.len(),
+            variants: Vec::new(),
         };
         let mut alloc = EntityIdAllocator::new();
         let id = alloc.allocate();

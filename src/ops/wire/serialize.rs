@@ -1,5 +1,6 @@
-//! Serialization for the ASSEM01 binary wire format.
+//! Serialization for the ASSEM02 binary wire format.
 
+use super::variants::serialize_variants_section;
 use super::{molecule_type_to_wire, ASSEMBLY_MAGIC};
 use crate::assembly::Assembly;
 use crate::entity::molecule::atom::Atom;
@@ -7,7 +8,7 @@ use crate::entity::molecule::polymer::Residue;
 use crate::entity::molecule::MoleculeEntity;
 use crate::ops::codec::AdapterError;
 
-/// Serialize an [`Assembly`] to ASSEM01 binary format.
+/// Serialize an [`Assembly`] to ASSEM02 binary format.
 ///
 /// Writes the entity list only; derived fields (`ss_types`, `hbonds`,
 /// `cross_entity_bonds`, `generation`) are rebuilt by
@@ -15,11 +16,14 @@ use crate::ops::codec::AdapterError;
 /// [`Assembly::new`].
 ///
 /// Format:
-/// - 8 bytes: magic "ASSEM01\0"
+/// - 8 bytes: magic `b"ASSEM02\0"`
 /// - 4 bytes: entity_count (u32 BE)
-/// - Per entity header (5 bytes each):
+/// - Per entity header (9 bytes each):
 ///   - 1 byte: `molecule_type` wire byte
 ///   - 4 bytes: `atom_count` (`u32` BE)
+///   - 4 bytes: `entity_id` (`u32` BE) — the originator's `EntityId.raw()`.
+///     Receivers reconstruct entities with the same id so cross-boundary edit
+///     references resolve.
 /// - Per atom (26 bytes):
 ///   - 12 bytes: x, y, z (`f32` BE x 3)
 ///   - 1 byte:   `chain_id`
@@ -27,6 +31,8 @@ use crate::ops::codec::AdapterError;
 ///   - 4 bytes:  `res_num` (`i32` BE)
 ///   - 4 bytes:  `atom_name`
 ///   - 2 bytes:  element symbol (byte 0, byte 1 or 0)
+/// - Per-entity variants section (after all atoms, in entity order). See the
+///   `variants` submodule for the inner layout.
 ///
 /// Occupancy and b_factor are not preserved on the wire; deserialize
 /// resets them to 1.0 and 0.0 respectively.
@@ -54,7 +60,7 @@ pub(crate) fn serialize_entities<E: std::borrow::Borrow<MoleculeEntity>>(
 ) -> Result<Vec<u8>, AdapterError> {
     let total_atoms: usize =
         entities.iter().map(|e| e.borrow().atom_count()).sum();
-    let header_size = 8 + 4 + entities.len() * 5;
+    let header_size = 8 + 4 + entities.len() * 9;
     let atom_size = total_atoms * 26;
     let mut buffer = Vec::with_capacity(header_size + atom_size);
 
@@ -71,12 +77,17 @@ pub(crate) fn serialize_entities<E: std::borrow::Borrow<MoleculeEntity>>(
         buffer.push(molecule_type_to_wire(entity.molecule_type()));
         #[allow(clippy::cast_possible_truncation)] // atom count fits in u32
         buffer.extend_from_slice(&(entity.atom_count() as u32).to_be_bytes());
+        buffer.extend_from_slice(&entity.id().raw().to_be_bytes());
     }
 
     // Atom data per entity, walking residues directly.
     for entity in entities {
         write_entity_atoms(entity.borrow(), &mut buffer);
     }
+
+    // Per-entity variants section (ASSEM02). Empty when no residue
+    // carries variants — costs 4 bytes per entity in that case.
+    serialize_variants_section(entities, &mut buffer);
 
     Ok(buffer)
 }
@@ -133,7 +144,7 @@ fn write_polymer_atoms(
     }
 }
 
-fn write_atom_row(
+pub(crate) fn write_atom_row(
     atom: &Atom,
     chain_id: u8,
     res_name: [u8; 3],

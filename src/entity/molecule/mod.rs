@@ -143,6 +143,35 @@ impl MoleculeEntity {
         self.atom_set().len()
     }
 
+    /// Read access to this entity's residue list, or `None` for
+    /// non-polymer entities.
+    #[must_use]
+    pub fn residues(&self) -> Option<&[Residue]> {
+        match self {
+            MoleculeEntity::Protein(e) => Some(&e.residues),
+            MoleculeEntity::NucleicAcid(e) => Some(&e.residues),
+            MoleculeEntity::SmallMolecule(_) | MoleculeEntity::Bulk(_) => None,
+        }
+    }
+
+    /// Mutable access to this entity's `(atoms, residues)` pair for
+    /// polymer entities. Returns `None` for non-polymer entities.
+    ///
+    /// Intended for the `ops::edit` path that re-shapes residue
+    /// content; callers are responsible for keeping `atom_range`s
+    /// consistent.
+    pub fn polymer_parts_mut(
+        &mut self,
+    ) -> Option<(&mut Vec<Atom>, &mut Vec<Residue>)> {
+        match self {
+            MoleculeEntity::Protein(e) => Some((&mut e.atoms, &mut e.residues)),
+            MoleculeEntity::NucleicAcid(e) => {
+                Some((&mut e.atoms, &mut e.residues))
+            }
+            MoleculeEntity::SmallMolecule(_) | MoleculeEntity::Bulk(_) => None,
+        }
+    }
+
     // -- Variant-specific accessors --
 
     /// If this entity is a protein, return it.
@@ -335,6 +364,7 @@ mod tests {
             auth_comp_id: None,
             ins_code: None,
             atom_range: range,
+            variants: Vec::new(),
         }
     }
 
