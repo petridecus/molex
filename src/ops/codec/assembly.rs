@@ -1,6 +1,5 @@
 //! Entity-utility helpers (CA positions, residue count) and the
-//! `update_protein_entities` live-position-update wire (Coords-shaped,
-//! transitional — see Phase 4a in `docs/COORDS_RETIREMENT_PLAN.md`).
+//! `update_protein_entities` live-position-update wire (Coords-shaped).
 
 use glam::Vec3;
 
@@ -33,8 +32,7 @@ pub fn residue_count(entities: &[MoleculeEntity]) -> usize {
 /// entity only receives its own chain's atoms, avoiding duplication.
 #[allow(
     dead_code,
-    reason = "test-only caller post-Phase 4a viso migration; function \
-              retained pending Phase 3/6 cleanup"
+    reason = "test-only caller in molex; production callers live in viso"
 )]
 pub(crate) fn update_protein_entities(
     entities: &mut Vec<MoleculeEntity>,

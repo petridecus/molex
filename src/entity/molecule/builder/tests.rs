@@ -1,4 +1,9 @@
-//! Tests for `EntityBuilder`.
+//! Tests for `EntityBuilder` — heuristic, hint, altloc, and error paths.
+//!
+//! Author-side / metadata round-trip tests live in
+//! `super::roundtrip_tests`; this module exports the shared
+//! `RowBuilder` helpers via `pub(super)` so the sibling test module can
+//! reuse them.
 
 #![allow(
     clippy::unwrap_used,
@@ -15,7 +20,7 @@ use super::*;
 // Row construction helpers
 // ---------------------------------------------------------------------------
 
-fn resname(s: &str) -> [u8; 3] {
+pub(super) fn resname(s: &str) -> [u8; 3] {
     let mut n = [b' '; 3];
     for (i, b) in s.bytes().take(3).enumerate() {
         n[i] = b;
@@ -23,7 +28,7 @@ fn resname(s: &str) -> [u8; 3] {
     n
 }
 
-fn atomname(s: &str) -> [u8; 4] {
+pub(super) fn atomname(s: &str) -> [u8; 4] {
     let mut n = [b' '; 4];
     // PDB-style names: " CA " (single-letter element, padded col 13-16
     // with the element in col 14). Single-letter callers ("N", "C")
@@ -41,7 +46,7 @@ fn atomname(s: &str) -> [u8; 4] {
     n
 }
 
-fn raw_atomname(s: &str) -> [u8; 4] {
+pub(super) fn raw_atomname(s: &str) -> [u8; 4] {
     let mut n = [b' '; 4];
     for (i, b) in s.bytes().take(4).enumerate() {
         n[i] = b;
@@ -49,7 +54,7 @@ fn raw_atomname(s: &str) -> [u8; 4] {
     n
 }
 
-struct RowBuilder {
+pub(super) struct RowBuilder {
     chain: String,
     seq: i32,
     comp: [u8; 3],
@@ -60,10 +65,15 @@ struct RowBuilder {
     alt_loc: Option<u8>,
     ins_code: Option<u8>,
     entity_id: Option<String>,
+    auth_chain: Option<String>,
+    auth_seq: Option<i32>,
+    auth_comp: Option<[u8; 3]>,
+    auth_atom: Option<[u8; 4]>,
+    formal_charge: i8,
 }
 
 impl RowBuilder {
-    fn new(chain: &str, seq: i32, comp: &str, atom: &str) -> Self {
+    pub(super) fn new(chain: &str, seq: i32, comp: &str, atom: &str) -> Self {
         Self {
             chain: chain.to_owned(),
             seq,
@@ -75,51 +85,81 @@ impl RowBuilder {
             alt_loc: None,
             ins_code: None,
             entity_id: None,
+            auth_chain: None,
+            auth_seq: None,
+            auth_comp: None,
+            auth_atom: None,
+            formal_charge: 0,
         }
     }
 
-    fn at(mut self, x: f32, y: f32, z: f32) -> Self {
+    pub(super) fn at(mut self, x: f32, y: f32, z: f32) -> Self {
         self.pos = (x, y, z);
         self
     }
 
-    fn elem(mut self, element: Element) -> Self {
+    pub(super) fn elem(mut self, element: Element) -> Self {
         self.element = element;
         self
     }
 
-    fn alt(mut self, alt_loc: u8, occupancy: f32) -> Self {
+    pub(super) fn alt(mut self, alt_loc: u8, occupancy: f32) -> Self {
         self.alt_loc = Some(alt_loc);
         self.occupancy = occupancy;
         self
     }
 
-    fn ins(mut self, ins_code: u8) -> Self {
+    pub(super) fn ins(mut self, ins_code: u8) -> Self {
         self.ins_code = Some(ins_code);
         self
     }
 
-    fn entity(mut self, eid: &str) -> Self {
+    pub(super) fn entity(mut self, eid: &str) -> Self {
         self.entity_id = Some(eid.to_owned());
         self
     }
 
-    fn raw_atom(mut self, atom: [u8; 4]) -> Self {
+    pub(super) fn raw_atom(mut self, atom: [u8; 4]) -> Self {
         self.atom = atom;
         self
     }
 
-    fn build(self) -> AtomRow {
+    pub(super) fn auth_chain(mut self, chain: &str) -> Self {
+        self.auth_chain = Some(chain.to_owned());
+        self
+    }
+
+    pub(super) fn auth_seq(mut self, seq: i32) -> Self {
+        self.auth_seq = Some(seq);
+        self
+    }
+
+    pub(super) fn auth_comp(mut self, comp: &str) -> Self {
+        self.auth_comp = Some(resname(comp));
+        self
+    }
+
+    pub(super) fn auth_atom(mut self, atom: [u8; 4]) -> Self {
+        self.auth_atom = Some(atom);
+        self
+    }
+
+    pub(super) fn formal_charge(mut self, charge: i8) -> Self {
+        self.formal_charge = charge;
+        self
+    }
+
+    pub(super) fn build(self) -> AtomRow {
         AtomRow {
             label_asym_id: self.chain,
             label_seq_id: self.seq,
             label_comp_id: self.comp,
             label_atom_id: self.atom,
             label_entity_id: self.entity_id,
-            auth_asym_id: None,
-            auth_seq_id: None,
-            auth_comp_id: None,
-            auth_atom_id: None,
+            auth_asym_id: self.auth_chain,
+            auth_seq_id: self.auth_seq,
+            auth_comp_id: self.auth_comp,
+            auth_atom_id: self.auth_atom,
             alt_loc: self.alt_loc,
             ins_code: self.ins_code,
             element: self.element,
@@ -128,7 +168,7 @@ impl RowBuilder {
             z: self.pos.2,
             occupancy: self.occupancy,
             b_factor: 0.0,
-            formal_charge: 0,
+            formal_charge: self.formal_charge,
         }
     }
 }
@@ -136,7 +176,7 @@ impl RowBuilder {
 /// Push a residue with the four standard protein backbone atoms in a
 /// straight 3.8 Å spacing along x — enough for `ProteinEntity::new` to
 /// keep it.
-fn push_protein_residue(
+pub(super) fn push_protein_residue(
     b: &mut EntityBuilder,
     chain: &str,
     seq: i32,

@@ -100,6 +100,7 @@ impl SmallMoleculeEntity {
                         .copied()
                         .unwrap_or(Element::Unknown),
                     name: coords.atom_names[idx],
+                    formal_charge: 0,
                 }
             })
             .collect();

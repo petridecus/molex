@@ -68,6 +68,7 @@ impl BulkEntity {
                     .copied()
                     .unwrap_or(Element::Unknown),
                 name: coords.atom_names[idx],
+                formal_charge: 0,
             });
             let _ = seen.insert((coords.chain_ids[idx], coords.res_nums[idx]));
         }

@@ -55,8 +55,11 @@ pub struct NAEntity {
     /// inter-residue phosphodiester bonds `O3'(i)-P(i+1)` across kept
     /// consecutive residues.
     pub bonds: Vec<CovalentBond>,
-    /// PDB chain identifier byte.
+    /// PDB chain identifier byte (derived from `label_asym_id`).
     pub pdb_chain_id: u8,
+    /// Author-side chain identifier byte, when distinct from
+    /// `pdb_chain_id`. `None` means "same as `pdb_chain_id`."
+    pub auth_asym_id: Option<u8>,
 }
 
 impl Entity for NAEntity {
@@ -106,12 +109,20 @@ impl NAEntity {
         reason = "constructor owns the inputs; canonicalize borrows before \
                   reassigning new owned vecs"
     )]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "id + atoms + residues + label/auth chain bytes are \
+                  required; `na_type` additionally discriminates DNA from RNA \
+                  (no equivalent on the protein side because Protein is its \
+                  own kind)."
+    )]
     pub fn new(
         id: EntityId,
         na_type: MoleculeType,
         atoms: Vec<Atom>,
         residues: Vec<Residue>,
         pdb_chain_id: u8,
+        auth_asym_id: Option<u8>,
     ) -> Self {
         let (atoms, residues) =
             canonicalize_na_residues(&atoms, &residues, pdb_chain_id);
@@ -125,6 +136,7 @@ impl NAEntity {
             segment_breaks,
             bonds,
             pdb_chain_id,
+            auth_asym_id,
         }
     }
 
@@ -138,7 +150,7 @@ impl NAEntity {
         pdb_chain_id: u8,
     ) -> Self {
         let (atoms, residues) = extract_atom_set_and_residues(indices, coords);
-        Self::new(id, na_type, atoms, residues, pdb_chain_id)
+        Self::new(id, na_type, atoms, residues, pdb_chain_id, None)
     }
 
     /// Extract phosphorus (P) atom positions, split into segments at
@@ -354,7 +366,10 @@ fn canonicalize_na_residues(
             let end = new_atoms.len();
             new_residues.push(Residue {
                 name: residue.name,
-                number: residue.number,
+                label_seq_id: residue.label_seq_id,
+                auth_seq_id: residue.auth_seq_id,
+                auth_comp_id: residue.auth_comp_id,
+                ins_code: residue.ins_code,
                 atom_range: start..end,
             });
         } else {
@@ -363,7 +378,7 @@ fn canonicalize_na_residues(
                 "NAEntity chain '{}': dropping residue {} (name {}) — missing \
                  backbone atoms (need P, O5', C5', C4', C3', O3')",
                 pdb_chain_id as char,
-                residue.number,
+                residue.label_seq_id,
                 res_name.trim(),
             );
             for idx in range {
@@ -503,6 +518,7 @@ mod tests {
             b_factor: 0.0,
             element: el,
             name: n,
+            formal_charge: 0,
         }
     }
 
@@ -538,12 +554,15 @@ mod tests {
         ];
         let residues = vec![Residue {
             name: res_name_bytes("DA "),
-            number: 1,
+            label_seq_id: 1,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: 0..atoms.len(),
         }];
         let mut alloc = EntityIdAllocator::new();
         let id = alloc.allocate();
-        NAEntity::new(id, MoleculeType::DNA, atoms, residues, b'A')
+        NAEntity::new(id, MoleculeType::DNA, atoms, residues, b'A', None)
     }
 
     #[test]
@@ -598,12 +617,16 @@ mod tests {
         ];
         let residues = vec![Residue {
             name: res_name_bytes("DA "),
-            number: 1,
+            label_seq_id: 1,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: 0..atoms.len(),
         }];
         let mut alloc = EntityIdAllocator::new();
         let id = alloc.allocate();
-        let na = NAEntity::new(id, MoleculeType::DNA, atoms, residues, b'A');
+        let na =
+            NAEntity::new(id, MoleculeType::DNA, atoms, residues, b'A', None);
         assert_eq!(na.residues.len(), 0);
         // Atoms still present.
         assert_eq!(na.atoms.len(), 5);

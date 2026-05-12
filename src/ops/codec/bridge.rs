@@ -37,7 +37,10 @@ pub fn extract_atom_set_and_residues(
             if let Some(rn) = current_res_num {
                 residues.push(Residue {
                     name: coords.res_names[indices[current_start]],
-                    number: rn,
+                    label_seq_id: rn,
+                    auth_seq_id: None,
+                    auth_comp_id: None,
+                    ins_code: None,
                     atom_range: current_start..end,
                 });
             }
@@ -55,12 +58,16 @@ pub fn extract_atom_set_and_residues(
                 .copied()
                 .unwrap_or(Element::Unknown),
             name: coords.atom_names[idx],
+            formal_charge: 0,
         });
     }
     if let Some(rn) = current_res_num {
         residues.push(Residue {
             name: coords.res_names[indices[current_start]],
-            number: rn,
+            label_seq_id: rn,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: current_start..atoms.len(),
         });
     }

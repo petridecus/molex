@@ -126,7 +126,7 @@ fn write_polymer_atoms(
                 &atoms[idx],
                 chain_id,
                 residue.name,
-                residue.number,
+                residue.label_seq_id,
                 buffer,
             );
         }

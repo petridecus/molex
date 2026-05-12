@@ -19,4 +19,6 @@ pub struct Atom {
     pub element: Element,
     /// PDB-style 4-character atom name (e.g. b"CA  ", b"N   ").
     pub name: [u8; 4],
+    /// Formal charge (signed). 0 means neutral.
+    pub formal_charge: i8,
 }

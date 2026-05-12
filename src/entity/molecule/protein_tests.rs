@@ -99,6 +99,7 @@ fn sidechain_is_empty_with_atoms() {
             b_factor: 0.0,
             element: Element::C,
             name: *b"CB  ",
+            formal_charge: 0,
         }],
         bonds: Vec::new(),
         is_hydrophobic: false,
@@ -273,7 +274,7 @@ fn interleaved_segments_for_single_segment() {
     assert_eq!(segments[0].len(), 6);
 }
 
-// -- Canonical ordering + bond population (Phase 2) --
+// -- Canonical ordering + bond population --
 
 fn alanine_scrambled_coords() -> Coords {
     // Input atoms: CB, O, N, HA, CA, C — non-canonical order.

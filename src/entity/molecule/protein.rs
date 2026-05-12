@@ -108,8 +108,12 @@ pub struct ProteinEntity {
     /// bonds `C(i)-N(i+1)` across pairs that are not separated by a
     /// segment break.
     pub bonds: Vec<CovalentBond>,
-    /// PDB chain identifier byte for this entity.
+    /// PDB chain identifier byte for this entity (derived from
+    /// `label_asym_id`).
     pub pdb_chain_id: u8,
+    /// Author-side chain identifier byte, when distinct from
+    /// `pdb_chain_id`. `None` means "same as `pdb_chain_id`."
+    pub auth_asym_id: Option<u8>,
 }
 
 /// Maximum C->N distance (A) for a peptide bond. Pairs exceeding this
@@ -140,6 +144,7 @@ impl ProteinEntity {
         atoms: Vec<Atom>,
         residues: Vec<Residue>,
         pdb_chain_id: u8,
+        auth_asym_id: Option<u8>,
     ) -> Self {
         let (atoms, residues) =
             canonicalize_protein_residues(&atoms, &residues, pdb_chain_id);
@@ -152,6 +157,7 @@ impl ProteinEntity {
             segment_breaks,
             bonds,
             pdb_chain_id,
+            auth_asym_id,
         }
     }
 
@@ -176,6 +182,7 @@ impl ProteinEntity {
         atoms: Vec<Atom>,
         residues: Vec<Residue>,
         pdb_chain_id: u8,
+        auth_asym_id: Option<u8>,
     ) -> Self {
         let (atoms, residues) =
             canonicalize_protein_residues(&atoms, &residues, pdb_chain_id);
@@ -188,6 +195,7 @@ impl ProteinEntity {
             segment_breaks,
             bonds,
             pdb_chain_id,
+            auth_asym_id,
         }
     }
 
@@ -256,7 +264,7 @@ impl ProteinEntity {
         pdb_chain_id: u8,
     ) -> Self {
         let (atoms, residues) = extract_atom_set_and_residues(indices, coords);
-        Self::new(id, atoms, residues, pdb_chain_id)
+        Self::new(id, atoms, residues, pdb_chain_id, None)
     }
 
     /// Derive backbone (N, CA, C, O) for all residues.
@@ -402,7 +410,10 @@ fn canonicalize_protein_residues(
             let end = new_atoms.len();
             new_residues.push(Residue {
                 name: residue.name,
-                number: residue.number,
+                label_seq_id: residue.label_seq_id,
+                auth_seq_id: residue.auth_seq_id,
+                auth_comp_id: residue.auth_comp_id,
+                ins_code: residue.ins_code,
                 atom_range: start..end,
             });
         } else {
@@ -411,7 +422,7 @@ fn canonicalize_protein_residues(
                 "ProteinEntity chain '{}': dropping residue {} (name {}) — \
                  missing backbone atoms (need N, CA, C, and O or OXT)",
                 pdb_chain_id as char,
-                residue.number,
+                residue.label_seq_id,
                 res_name.trim(),
             );
             for idx in range {

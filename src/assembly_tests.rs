@@ -19,6 +19,7 @@ fn mk_atom(name: [u8; 4], el: Element, pos: Vec3) -> Atom {
         b_factor: 0.0,
         element: el,
         name,
+        formal_charge: 0,
     }
 }
 
@@ -52,16 +53,24 @@ fn make_dipeptide_with_id(
     let residues = vec![
         Residue {
             name: *b"ALA",
-            number: 1,
+            label_seq_id: 1,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: 0..5,
         },
         Residue {
             name: *b"GLY",
-            number: 2,
+            label_seq_id: 2,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: 5..9,
         },
     ];
-    MoleculeEntity::Protein(ProteinEntity::new(id, atoms, residues, chain))
+    MoleculeEntity::Protein(ProteinEntity::new(
+        id, atoms, residues, chain, None,
+    ))
 }
 
 /// A single cysteine residue with a bondable SG at a given position.
@@ -88,10 +97,15 @@ fn cys_residue_with_sg_with_id(
     ];
     let residues = vec![Residue {
         name: *b"CYS",
-        number: 1,
+        label_seq_id: 1,
+        auth_seq_id: None,
+        auth_comp_id: None,
+        ins_code: None,
         atom_range: 0..atoms.len(),
     }];
-    MoleculeEntity::Protein(ProteinEntity::new(id, atoms, residues, chain))
+    MoleculeEntity::Protein(ProteinEntity::new(
+        id, atoms, residues, chain, None,
+    ))
 }
 
 // -- Construction + generation --

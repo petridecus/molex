@@ -117,6 +117,7 @@ mod tests {
             b_factor: 0.0,
             element: el,
             name,
+            formal_charge: 0,
         }
     }
 
@@ -132,7 +133,10 @@ mod tests {
         ];
         let residue = Residue {
             name: *b"CYS",
-            number: 1,
+            label_seq_id: 1,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: 0..atoms.len(),
         };
         (atoms, residue)
@@ -157,12 +161,14 @@ mod tests {
             std::mem::take(&mut atoms_a),
             vec![res_a],
             b'A',
+            None,
         );
         let ent_b = ProteinEntity::new(
             id_b,
             std::mem::take(&mut atoms_b),
             vec![res_b],
             b'B',
+            None,
         );
         let entities = vec![
             MoleculeEntity::Protein(ent_a),
@@ -189,7 +195,10 @@ mod tests {
         ];
         let residue = Residue {
             name: *b"MET",
-            number: 1,
+            label_seq_id: 1,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: 0..atoms.len(),
         };
         let mut alloc = EntityIdAllocator::new();
@@ -199,6 +208,7 @@ mod tests {
             std::mem::take(&mut atoms),
             vec![residue],
             b'A',
+            None,
         );
         let entities = vec![MoleculeEntity::Protein(ent)];
         assert!(detect_disulfides(&entities).is_empty());

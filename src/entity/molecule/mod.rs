@@ -22,7 +22,7 @@ pub mod traits;
 pub use atom::Atom;
 #[allow(
     unused_imports,
-    reason = "consumed by adapters during the Phase 3a/3b/3c cutover"
+    reason = "exported for adapter consumers; not all consumers wired yet"
 )]
 pub(crate) use builder::{
     AtomRow, BuildError, EntityBuilder, ExpectedEntityType,
@@ -196,7 +196,7 @@ impl MoleculeEntity {
     #[allow(
         dead_code,
         reason = "only called under feature = \"python\" (atomworks bridge) \
-                  and in tests; retained pending Phase 4b/6 cleanup"
+                  and in tests"
     )]
     pub(crate) fn to_coords(&self) -> Coords {
         match self {
@@ -348,7 +348,7 @@ fn polymer_entity_to_coords(
     for residue in residues {
         for _ in residue.atom_range.clone() {
             res_names.push(residue.name);
-            res_nums.push(residue.number);
+            res_nums.push(residue.label_seq_id);
         }
     }
     Coords {

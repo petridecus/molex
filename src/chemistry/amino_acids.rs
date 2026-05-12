@@ -117,14 +117,11 @@ impl AminoAcid {
     /// sidechain-internal heavy bonds. Glycine has no sidechain heavy
     /// atoms and returns an empty slice.
     ///
-    /// Lifted directly from viso's pre-migration `get_residue_bonds`
-    /// table. Phase 2 of the assembly migration uses this with explicit
-    /// backbone (N-CA, CA-C, C=O) and inter-residue peptide bonds when
-    /// populating `ProteinEntity` bond graphs.
+    /// Consumers add backbone (N-CA, CA-C, C=O) and inter-residue
+    /// peptide bonds separately when populating `ProteinEntity` bond
+    /// graphs.
     ///
-    /// Note: the proline ring-closure bond CD-N is intentionally
-    /// omitted to match the pre-migration behavior; if a Phase 2
-    /// consumer needs it, lock the change in `decision_log.md` first.
+    /// The proline ring-closure bond CD-N is intentionally omitted.
     #[must_use]
     pub const fn bonds(self) -> &'static [(AtomName, AtomName)] {
         match self {
@@ -153,8 +150,7 @@ impl AminoAcid {
 
     /// Whether this amino acid is classified as hydrophobic.
     ///
-    /// Membership matches viso's pre-migration table:
-    /// Ala, Val, Ile, Leu, Met, Phe, Trp, Pro, Gly.
+    /// Hydrophobic set: Ala, Val, Ile, Leu, Met, Phe, Trp, Pro, Gly.
     #[must_use]
     pub const fn is_hydrophobic(self) -> bool {
         matches!(

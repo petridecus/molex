@@ -56,7 +56,9 @@ pub fn assembly_bytes_to_pdb(bytes: Vec<u8>) -> PyResult<String> {
     let assembly = deserialize_assembly(&bytes).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })?;
-    Ok(pdb::assembly_to_pdb(&assembly))
+    pdb::assembly_to_pdb(&assembly).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+    })
 }
 
 /// Round-trip ASSEM01 bytes through `Assembly` and back (validation).

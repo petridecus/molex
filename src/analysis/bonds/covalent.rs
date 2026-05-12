@@ -97,6 +97,7 @@ mod tests {
             b_factor: 0.0,
             element,
             name: *b"X   ",
+            formal_charge: 0,
         }
     }
 

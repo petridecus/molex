@@ -3,8 +3,8 @@
 
 #![allow(
     dead_code,
-    reason = "internals are wired in by adapters during the Phase 3a/3b/3c \
-              cutover"
+    reason = "builder internals are exposed for adapters; some helpers are \
+              still unwired"
 )]
 
 use std::collections::HashMap;
@@ -13,15 +13,14 @@ use glam::Vec3;
 
 use super::atom::Atom;
 use super::bulk::BulkEntity;
-use super::classify::classify_residue;
 use super::id::EntityIdAllocator;
-use super::nucleic_acid::NAEntity;
-use super::polymer::Residue;
-use super::protein::ProteinEntity;
-use super::small_molecule::SmallMoleculeEntity;
 use super::{MoleculeEntity, MoleculeType};
 use crate::element::Element;
 use crate::ops::codec::ChainIdMapper;
+
+mod classify;
+
+use classify::classify_chain;
 
 /// Maximum number of distinct chains the builder accepts. Matches the
 /// printable-byte capacity of `ChainIdMapper`.
@@ -187,7 +186,7 @@ impl EntityBuilder {
     /// accepted.
     #[allow(
         clippy::needless_pass_by_value,
-        reason = "AtomRow is moved into builder state in 3b/3c"
+        reason = "AtomRow is moved into builder state in mmCIF / BCIF callers"
     )]
     pub(crate) fn push_atom(&mut self, row: AtomRow) -> Result<(), BuildError> {
         validate_coords(&row)?;
@@ -213,7 +212,7 @@ impl EntityBuilder {
             mut allocator,
             hints,
             mut chains,
-            chain_mapper: _,
+            mut chain_mapper,
             chain_order,
         } = self;
 
@@ -238,12 +237,15 @@ impl EntityBuilder {
                     .as_deref()
                     .and_then(|k| hints.get(k).copied())
                     .unwrap_or(ExpectedEntityType::Unknown);
-                classify_chain(
-                    hint,
-                    chain.pdb_chain_id,
-                    &chain.residues,
-                    &mut ctx,
-                );
+                let chain_bytes = ChainBytes {
+                    pdb_chain_id: chain.pdb_chain_id,
+                    auth_asym_id: resolve_auth_chain_byte(
+                        chain_key,
+                        chain.auth_asym_id.as_deref(),
+                        &mut chain_mapper,
+                    ),
+                };
+                classify_chain(hint, chain_bytes, &chain.residues, &mut ctx);
             }
         }
 
@@ -273,6 +275,7 @@ impl EntityBuilder {
         let pdb_chain_id = self.chain_mapper.get_or_assign(&row.label_asym_id);
         let state = ChainState {
             pdb_chain_id,
+            auth_asym_id: row.auth_asym_id.clone(),
             entity_hint_key: row.label_entity_id.clone(),
             residues: Vec::new(),
             residue_index: HashMap::new(),
@@ -290,11 +293,24 @@ impl EntityBuilder {
 // Internal state
 // ---------------------------------------------------------------------------
 
-struct ChainState {
-    pdb_chain_id: u8,
-    entity_hint_key: Option<String>,
-    residues: Vec<ResidueAccum>,
-    residue_index: HashMap<(i32, Option<u8>), usize>,
+/// Both chain bytes derived for an emitted entity: the label-side byte
+/// (used internally and as the `pdb_chain_id`) and the optional
+/// author-side byte (`None` when the auth string matches the label or
+/// no auth string was supplied).
+#[derive(Clone, Copy)]
+pub(super) struct ChainBytes {
+    pub(super) pdb_chain_id: u8,
+    pub(super) auth_asym_id: Option<u8>,
+}
+
+pub(super) struct ChainState {
+    pub(super) pdb_chain_id: u8,
+    /// `auth_asym_id` captured from the first row that opened the
+    /// chain. Resolved to a printable byte at `finish()` time.
+    pub(super) auth_asym_id: Option<String>,
+    pub(super) entity_hint_key: Option<String>,
+    pub(super) residues: Vec<ResidueAccum>,
+    pub(super) residue_index: HashMap<(i32, Option<u8>), usize>,
 }
 
 impl ChainState {
@@ -306,7 +322,9 @@ impl ChainState {
         let idx = self.residues.len();
         self.residues.push(ResidueAccum {
             label_seq_id: row.label_seq_id,
+            auth_seq_id: row.auth_seq_id,
             label_comp_id: row.label_comp_id,
+            auth_comp_id: row.auth_comp_id,
             ins_code: row.ins_code,
             atoms: HashMap::new(),
             atom_order: Vec::new(),
@@ -316,12 +334,14 @@ impl ChainState {
     }
 }
 
-struct ResidueAccum {
-    label_seq_id: i32,
-    label_comp_id: [u8; 3],
-    ins_code: Option<u8>,
-    atoms: HashMap<[u8; 4], AtomChoice>,
-    atom_order: Vec<[u8; 4]>,
+pub(super) struct ResidueAccum {
+    pub(super) label_seq_id: i32,
+    pub(super) auth_seq_id: Option<i32>,
+    pub(super) label_comp_id: [u8; 3],
+    pub(super) auth_comp_id: Option<[u8; 3]>,
+    pub(super) ins_code: Option<u8>,
+    pub(super) atoms: HashMap<[u8; 4], AtomChoice>,
+    pub(super) atom_order: Vec<[u8; 4]>,
 }
 
 impl ResidueAccum {
@@ -341,13 +361,15 @@ impl ResidueAccum {
     }
 }
 
-struct AtomChoice {
+pub(super) struct AtomChoice {
     alt_loc: Option<u8>,
     occupancy: f32,
     label_atom_id: [u8; 4],
+    auth_atom_id: Option<[u8; 4]>,
     element: Element,
     position: Vec3,
     b_factor: f32,
+    formal_charge: i8,
 }
 
 impl AtomChoice {
@@ -356,19 +378,24 @@ impl AtomChoice {
             alt_loc: row.alt_loc,
             occupancy: row.occupancy,
             label_atom_id: row.label_atom_id,
+            auth_atom_id: row.auth_atom_id,
             element: row.element,
             position: Vec3::new(row.x, row.y, row.z),
             b_factor: row.b_factor,
+            formal_charge: row.formal_charge,
         }
     }
 
-    fn to_atom(&self) -> Atom {
+    pub(super) fn to_atom(&self) -> Atom {
+        // Author-side atom name displaces label when present; the
+        // structural-side identifier is still the dedup / grouping key.
         Atom {
             position: self.position,
             occupancy: self.occupancy,
             b_factor: self.b_factor,
             element: self.element,
-            name: self.label_atom_id,
+            name: self.auth_atom_id.unwrap_or(self.label_atom_id),
+            formal_charge: self.formal_charge,
         }
     }
 }
@@ -398,22 +425,22 @@ fn candidate_should_replace(
 // finish() context
 // ---------------------------------------------------------------------------
 
-struct ChainCtx<'a> {
-    allocator: &'a mut EntityIdAllocator,
-    out: &'a mut Vec<MoleculeEntity>,
-    water: &'a mut GlobalBulk,
-    solvent: &'a mut GlobalBulk,
+pub(super) struct ChainCtx<'a> {
+    pub(super) allocator: &'a mut EntityIdAllocator,
+    pub(super) out: &'a mut Vec<MoleculeEntity>,
+    pub(super) water: &'a mut GlobalBulk,
+    pub(super) solvent: &'a mut GlobalBulk,
 }
 
 #[derive(Default)]
-struct GlobalBulk {
+pub(super) struct GlobalBulk {
     atoms: Vec<Atom>,
     residue_count: usize,
     residue_name: Option<[u8; 3]>,
 }
 
 impl GlobalBulk {
-    fn ingest(&mut self, r: &ResidueAccum) {
+    pub(super) fn ingest(&mut self, r: &ResidueAccum) {
         for name in &r.atom_order {
             self.atoms.push(r.atoms[name].to_atom());
         }
@@ -468,319 +495,25 @@ fn trim_atom_name(name: [u8; 4]) -> String {
         .to_owned()
 }
 
-fn trim_res_name(name: &[u8; 3]) -> &str {
-    std::str::from_utf8(name).unwrap_or("").trim()
-}
-
-/// True if the residue has PDB-style N, CA, and C atoms — the trigger
-/// for modified-residue merging into a Protein chain. Matches the
-/// existing `bridge::residue_has_backbone` check byte-for-byte.
-fn residue_has_protein_backbone(residue: &ResidueAccum) -> bool {
-    let mut has_n = false;
-    let mut has_ca = false;
-    let mut has_c = false;
-    for name in residue.atoms.keys() {
-        match name {
-            [b' ', b'N', b' ', b' '] | [b'N', b' ', b' ', b' '] => has_n = true,
-            [b' ', b'C', b'A', b' '] | [b'C', b'A', b' ', b' '] => {
-                has_ca = true;
-            }
-            [b' ', b'C', b' ', b' '] | [b'C', b' ', b' ', b' '] => has_c = true,
-            _ => {}
-        }
+/// Resolve a chain's `auth_asym_id` to a printable byte.
+///
+/// Returns `None` when the auth string matches the label key (the
+/// common case — no extra mapper entry needed) or when no auth string
+/// was supplied. Otherwise allocates a fresh byte in the mapper to
+/// disambiguate it from the label-side chain byte.
+fn resolve_auth_chain_byte(
+    label_key: &str,
+    auth: Option<&str>,
+    mapper: &mut ChainIdMapper,
+) -> Option<u8> {
+    let auth = auth?;
+    if auth == label_key {
+        return None;
     }
-    has_n && has_ca && has_c
-}
-
-fn residue_to_atoms(r: &ResidueAccum) -> Vec<Atom> {
-    r.atom_order
-        .iter()
-        .map(|name| r.atoms[name].to_atom())
-        .collect()
-}
-
-fn flatten_residues<'a>(
-    residues: impl IntoIterator<Item = &'a ResidueAccum>,
-) -> (Vec<Atom>, Vec<Residue>) {
-    let mut atoms: Vec<Atom> = Vec::new();
-    let mut out_residues: Vec<Residue> = Vec::new();
-    for r in residues {
-        let start = atoms.len();
-        for name in &r.atom_order {
-            atoms.push(r.atoms[name].to_atom());
-        }
-        let end = atoms.len();
-        out_residues.push(Residue {
-            name: r.label_comp_id,
-            number: r.label_seq_id,
-            atom_range: start..end,
-        });
-    }
-    (atoms, out_residues)
-}
-
-// ---------------------------------------------------------------------------
-// Classification dispatch
-// ---------------------------------------------------------------------------
-
-fn classify_chain(
-    hint: ExpectedEntityType,
-    pdb_chain_id: u8,
-    residues: &[ResidueAccum],
-    ctx: &mut ChainCtx,
-) {
-    match hint {
-        ExpectedEntityType::Protein => {
-            emit_polymer_chain(
-                residues,
-                MoleculeType::Protein,
-                pdb_chain_id,
-                ctx,
-            );
-        }
-        ExpectedEntityType::DNA => {
-            emit_polymer_chain(residues, MoleculeType::DNA, pdb_chain_id, ctx);
-        }
-        ExpectedEntityType::RNA => {
-            emit_polymer_chain(residues, MoleculeType::RNA, pdb_chain_id, ctx);
-        }
-        ExpectedEntityType::Water => emit_chain_bulk(
-            residues,
-            MoleculeType::Water,
-            DEFAULT_WATER_RESNAME,
-            ctx,
-        ),
-        ExpectedEntityType::NonPolymer => {
-            emit_non_polymer_chain(residues, ctx);
-        }
-        ExpectedEntityType::Unknown => {
-            emit_unknown_chain(pdb_chain_id, residues, ctx);
-        }
-    }
-}
-
-fn emit_polymer_chain(
-    residues: &[ResidueAccum],
-    mol_type: MoleculeType,
-    pdb_chain_id: u8,
-    ctx: &mut ChainCtx,
-) {
-    if residues.is_empty() {
-        return;
-    }
-    let (atoms, res_vec) = flatten_residues(residues);
-    let id = ctx.allocator.allocate();
-    match mol_type {
-        MoleculeType::Protein => ctx.out.push(MoleculeEntity::Protein(
-            ProteinEntity::new(id, atoms, res_vec, pdb_chain_id),
-        )),
-        MoleculeType::DNA | MoleculeType::RNA => {
-            ctx.out.push(MoleculeEntity::NucleicAcid(NAEntity::new(
-                id,
-                mol_type,
-                atoms,
-                res_vec,
-                pdb_chain_id,
-            )));
-        }
-        _ => unreachable!("emit_polymer_chain called with non-polymer type"),
-    }
-}
-
-fn emit_chain_bulk(
-    residues: &[ResidueAccum],
-    mol_type: MoleculeType,
-    default_resname: [u8; 3],
-    ctx: &mut ChainCtx,
-) {
-    if residues.is_empty() {
-        return;
-    }
-    let mut atoms: Vec<Atom> = Vec::new();
-    for r in residues {
-        for name in &r.atom_order {
-            atoms.push(r.atoms[name].to_atom());
-        }
-    }
-    let residue_name = residues
-        .first()
-        .map_or(default_resname, |r| r.label_comp_id);
-    let id = ctx.allocator.allocate();
-    ctx.out.push(MoleculeEntity::Bulk(BulkEntity::new(
-        id,
-        mol_type,
-        atoms,
-        residue_name,
-        residues.len(),
-    )));
-}
-
-fn emit_single_residue_small_molecule(
-    r: &ResidueAccum,
-    mol_type: MoleculeType,
-    ctx: &mut ChainCtx,
-) {
-    let atoms = residue_to_atoms(r);
-    let id = ctx.allocator.allocate();
-    ctx.out
-        .push(MoleculeEntity::SmallMolecule(SmallMoleculeEntity::new(
-            id,
-            mol_type,
-            atoms,
-            r.label_comp_id,
-        )));
-}
-
-fn emit_non_polymer_chain(residues: &[ResidueAccum], ctx: &mut ChainCtx) {
-    for r in residues {
-        let mol_type = classify_residue(trim_res_name(&r.label_comp_id));
-        match mol_type {
-            MoleculeType::Water => ctx.water.ingest(r),
-            MoleculeType::Solvent => ctx.solvent.ingest(r),
-            MoleculeType::Protein | MoleculeType::DNA | MoleculeType::RNA => {
-                // Hint says non-polymer; backbone-bearing residues fall
-                // back to Ligand rather than building a polymer.
-                emit_single_residue_small_molecule(
-                    r,
-                    MoleculeType::Ligand,
-                    ctx,
-                );
-            }
-            MoleculeType::Ligand
-            | MoleculeType::Ion
-            | MoleculeType::Cofactor
-            | MoleculeType::Lipid => {
-                emit_single_residue_small_molecule(r, mol_type, ctx);
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[allow(
-    clippy::upper_case_acronyms,
-    reason = "DNA / RNA mirror MoleculeType's variant names"
-)]
-enum UnknownBucket {
-    Protein,
-    DNA,
-    RNA,
-    Water,
-    Solvent,
-    Small(MoleculeType),
-}
-
-fn assign_unknown_bucket(r: &ResidueAccum, has_protein: bool) -> UnknownBucket {
-    let mol_type = classify_residue(trim_res_name(&r.label_comp_id));
-    match mol_type {
-        MoleculeType::Protein => UnknownBucket::Protein,
-        MoleculeType::DNA => UnknownBucket::DNA,
-        MoleculeType::RNA => UnknownBucket::RNA,
-        MoleculeType::Water => UnknownBucket::Water,
-        MoleculeType::Solvent => UnknownBucket::Solvent,
-        MoleculeType::Ligand
-        | MoleculeType::Ion
-        | MoleculeType::Cofactor
-        | MoleculeType::Lipid => {
-            if has_protein && residue_has_protein_backbone(r) {
-                UnknownBucket::Protein
-            } else {
-                UnknownBucket::Small(mol_type)
-            }
-        }
-    }
-}
-
-/// Full residue-name heuristic with the protein-merge logic preserved
-/// from `bridge::split_into_entities`: a residue that classifies as
-/// Ligand/Ion/Cofactor/Lipid but carries protein backbone atoms gets
-/// folded into the chain's protein bucket when one exists.
-fn emit_unknown_chain(
-    pdb_chain_id: u8,
-    residues: &[ResidueAccum],
-    ctx: &mut ChainCtx,
-) {
-    let has_protein = residues.iter().any(|r| {
-        classify_residue(trim_res_name(&r.label_comp_id))
-            == MoleculeType::Protein
-    });
-    let buckets: Vec<UnknownBucket> = residues
-        .iter()
-        .map(|r| assign_unknown_bucket(r, has_protein))
-        .collect();
-
-    emit_unknown_polymer(
-        UnknownBucket::Protein,
-        residues,
-        &buckets,
-        pdb_chain_id,
-        ctx,
-    );
-    emit_unknown_polymer(
-        UnknownBucket::DNA,
-        residues,
-        &buckets,
-        pdb_chain_id,
-        ctx,
-    );
-    emit_unknown_polymer(
-        UnknownBucket::RNA,
-        residues,
-        &buckets,
-        pdb_chain_id,
-        ctx,
-    );
-
-    for (r, bucket) in residues.iter().zip(buckets.iter()) {
-        match bucket {
-            UnknownBucket::Water => ctx.water.ingest(r),
-            UnknownBucket::Solvent => ctx.solvent.ingest(r),
-            UnknownBucket::Small(mt) => {
-                emit_single_residue_small_molecule(r, *mt, ctx);
-            }
-            UnknownBucket::Protein
-            | UnknownBucket::DNA
-            | UnknownBucket::RNA => {}
-        }
-    }
-}
-
-fn emit_unknown_polymer(
-    target: UnknownBucket,
-    residues: &[ResidueAccum],
-    buckets: &[UnknownBucket],
-    pdb_chain_id: u8,
-    ctx: &mut ChainCtx,
-) {
-    let selected: Vec<&ResidueAccum> = residues
-        .iter()
-        .zip(buckets.iter())
-        .filter(|(_, b)| **b == target)
-        .map(|(r, _)| r)
-        .collect();
-    if selected.is_empty() {
-        return;
-    }
-    let (atoms, res_vec) = flatten_residues(selected.iter().copied());
-    let id = ctx.allocator.allocate();
-    match target {
-        UnknownBucket::Protein => ctx.out.push(MoleculeEntity::Protein(
-            ProteinEntity::new(id, atoms, res_vec, pdb_chain_id),
-        )),
-        UnknownBucket::DNA => ctx.out.push(MoleculeEntity::NucleicAcid(
-            NAEntity::new(id, MoleculeType::DNA, atoms, res_vec, pdb_chain_id),
-        )),
-        UnknownBucket::RNA => ctx.out.push(MoleculeEntity::NucleicAcid(
-            NAEntity::new(id, MoleculeType::RNA, atoms, res_vec, pdb_chain_id),
-        )),
-        UnknownBucket::Water
-        | UnknownBucket::Solvent
-        | UnknownBucket::Small(_) => {
-            unreachable!("emit_unknown_polymer called with non-polymer bucket")
-        }
-    }
+    Some(mapper.get_or_assign(auth))
 }
 
 #[cfg(test)]
-#[path = "builder_tests.rs"]
+mod roundtrip_tests;
+#[cfg(test)]
 mod tests;

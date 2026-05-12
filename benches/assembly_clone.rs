@@ -31,6 +31,7 @@ fn mk_atom(name: [u8; 4], element: Element, position: Vec3) -> Atom {
         b_factor: 0.0,
         element,
         name,
+        formal_charge: 0,
     }
 }
 
@@ -66,11 +67,16 @@ fn make_chain(
         ));
         residues.push(Residue {
             name: *b"ALA",
-            number: (r as i32) + 1,
+            label_seq_id: (r as i32) + 1,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
             atom_range: start..atoms.len(),
         });
     }
-    MoleculeEntity::Protein(ProteinEntity::new(id, atoms, residues, chain))
+    MoleculeEntity::Protein(ProteinEntity::new(
+        id, atoms, residues, chain, None,
+    ))
 }
 
 fn make_assembly(residues_per_chain: usize) -> Assembly {

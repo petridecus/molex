@@ -3,8 +3,8 @@
 //!
 //! The `Coords` struct is a flat parallel-array atom record used by the
 //! PDB/CIF/BCIF parsers and the ASSEM01 wire decoder as an intermediate
-//! step on the way to / from `Vec<MoleculeEntity>`. It is not part of the
-//! public API (see `docs/COORDS_RETIREMENT_PLAN.md`).
+//! step on the way to / from `Vec<MoleculeEntity>`. It is not part of
+//! the public API.
 //!
 //! The ASSEM01 wire format itself lives in `crate::ops::wire`.
 
@@ -14,8 +14,7 @@ mod types;
 
 #[allow(
     unused_imports,
-    reason = "test-only caller post-Phase 4a; function retained pending Phase \
-              3/6 cleanup"
+    reason = "test-only caller; function retained for other consumers"
 )]
 pub(crate) use assembly::update_protein_entities;
 pub use assembly::{ca_positions, residue_count};
