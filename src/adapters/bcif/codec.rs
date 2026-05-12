@@ -480,9 +480,16 @@ fn decode_interval_quantization(
     ))
 }
 
+/// Cap on the cumulative output count of a single `RunLength` decode.
+///
+/// Encoded `_atom_site` columns at RCSB-published structures top out near
+/// 10M rows; the bound here is two orders of magnitude beyond that, low
+/// enough to prevent unbounded allocation from a crafted input.
+const MAX_RUN_LENGTH_OUTPUT: usize = 1_000_000_000;
+
 fn decode_run_length(
     input: ColData,
-    _enc: &MsgVal,
+    enc: &MsgVal,
 ) -> Result<ColData, AdapterError> {
     let ColData::IntArray(ints) = input else {
         return Err(AdapterError::InvalidFormat(
@@ -496,13 +503,49 @@ fn decode_run_length(
         ));
     }
 
-    let mut result = Vec::new();
+    let expected: Option<usize> = enc
+        .get("srcSize")
+        .and_then(MsgVal::as_i64)
+        .and_then(|n| usize::try_from(n).ok());
+
+    let mut total: usize = 0;
+    for pair in ints.chunks_exact(2) {
+        if pair[1] < 0 {
+            return Err(AdapterError::InvalidFormat(
+                "RunLength: negative count".into(),
+            ));
+        }
+        #[allow(clippy::cast_sign_loss, reason = "checked >= 0 above")]
+        let count = pair[1] as usize;
+        total = total.checked_add(count).ok_or_else(|| {
+            AdapterError::InvalidFormat(
+                "RunLength: cumulative count overflows usize".into(),
+            )
+        })?;
+        if total > MAX_RUN_LENGTH_OUTPUT {
+            return Err(AdapterError::InvalidFormat(format!(
+                "RunLength output exceeds {MAX_RUN_LENGTH_OUTPUT} entries"
+            )));
+        }
+    }
+    if let Some(expected) = expected {
+        if expected > MAX_RUN_LENGTH_OUTPUT {
+            return Err(AdapterError::InvalidFormat(format!(
+                "RunLength srcSize {expected} exceeds bound"
+            )));
+        }
+        if total != expected {
+            return Err(AdapterError::InvalidFormat(format!(
+                "RunLength srcSize {expected} disagrees with sum-of-counts \
+                 {total}"
+            )));
+        }
+    }
+
+    let mut result = Vec::with_capacity(total);
     for pair in ints.chunks_exact(2) {
         let value = pair[0];
-        #[allow(
-            clippy::cast_sign_loss,
-            reason = "run-length counts are non-negative by spec"
-        )]
+        #[allow(clippy::cast_sign_loss, reason = "non-negative verified above")]
         let count = pair[1] as usize;
         result.extend(std::iter::repeat_n(value, count));
     }
@@ -538,9 +581,8 @@ fn decode_delta(input: ColData, enc: &MsgVal) -> Result<ColData, AdapterError> {
 /// Extract integer-packing parameters from a BinaryCIF encoding node.
 #[allow(
     clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    reason = "byteCount (1|2) and srcSize are small non-negative per spec"
+    reason = "byteCount and srcSize are small non-negative per spec"
 )]
 fn int_packing_params(enc: &MsgVal) -> Result<(usize, i32, i32), AdapterError> {
     let byte_count =
@@ -550,7 +592,7 @@ fn int_packing_params(enc: &MsgVal) -> Result<(usize, i32, i32), AdapterError> {
                 AdapterError::InvalidFormat(
                     "IntegerPacking missing 'byteCount'".into(),
                 )
-            })? as i32;
+            })?;
     let src_size =
         enc.get("srcSize").and_then(MsgVal::as_i64).ok_or_else(|| {
             AdapterError::InvalidFormat(
@@ -564,9 +606,16 @@ fn int_packing_params(enc: &MsgVal) -> Result<(usize, i32, i32), AdapterError> {
 
     let (upper, lower) = match (is_unsigned, byte_count) {
         (true, 1) => (0xFF_i32, 0_i32),
-        (true, _) => (0xFFFF_i32, 0_i32),
+        (true, 2) => (0xFFFF_i32, 0_i32),
+        (true, 4) => (i32::MAX, 0_i32),
         (false, 1) => (0x7F_i32, -0x7F_i32),
-        (false, _) => (0x7FFF_i32, -0x7FFF_i32),
+        (false, 2) => (0x7FFF_i32, -0x7FFF_i32),
+        (false, 4) => (i32::MAX, -i32::MAX),
+        _ => {
+            return Err(AdapterError::InvalidFormat(format!(
+                "IntegerPacking unsupported byteCount={byte_count}"
+            )))
+        }
     };
     Ok((src_size, upper, lower))
 }

@@ -1,48 +1,41 @@
 //! BinaryCIF (.bcif) format decoder.
 //!
-//! BinaryCIF is a column-oriented binary encoding of mmCIF, used by RCSB PDB
-//! as the standard binary format (replacing MMTF). Files are
-//! MessagePack-encoded with optional gzip compression.
-//!
-//! Reference: <https://github.com/molstar/BinaryCIF/blob/master/encoding.md>
+//! BinaryCIF is a column-oriented binary encoding of mmCIF used by RCSB PDB
+//! as the standard binary format. Files are MessagePack-encoded with optional
+//! gzip compression. Spec:
+//! <https://github.com/molstar/BinaryCIF/blob/master/encoding.md>.
 
 mod codec;
+mod decode;
+mod hint;
+mod refuse;
 
-use std::collections::HashMap;
-use std::io::Read;
 use std::path::Path;
 
-use codec::{decode_column, decode_msgpack, ColData, MsgVal};
-
-use crate::element::Element;
 use crate::entity::molecule::MoleculeEntity;
-use crate::ops::codec::{
-    split_into_entities, AdapterError, ChainIdMapper, Coords, CoordsAtom,
-};
-
-// ---------------------------------------------------------------------------
-// Entity-first API (primary)
-// ---------------------------------------------------------------------------
+use crate::ops::codec::AdapterError;
 
 /// Decode BinaryCIF bytes to entity list.
 ///
+/// Returns the model whose `pdbx_PDB_model_num` matches the smallest value
+/// present; files without a model column collapse to a single implicit model.
+///
 /// # Errors
 ///
-/// Returns `AdapterError::InvalidFormat` if the bytes cannot be parsed as
-/// valid BinaryCIF.
+/// Returns [`AdapterError`] if the bytes cannot be parsed as valid
+/// BinaryCIF, contain multiple data blocks, or describe more chains than
+/// the printable-byte mapper can hold.
 pub fn bcif_to_entities(
     bytes: &[u8],
 ) -> Result<Vec<MoleculeEntity>, AdapterError> {
-    let coords = parse_bcif_to_coords(bytes)?;
-    Ok(split_into_entities(&coords))
+    decode::decode_to_entities(bytes)
 }
 
 /// Load a BinaryCIF file and convert to entity list.
 ///
 /// # Errors
 ///
-/// Returns `AdapterError::InvalidFormat` if the file cannot be read or parsed
-/// as valid BinaryCIF.
+/// Returns [`AdapterError`] if the file cannot be read or parsing fails.
 pub fn bcif_file_to_entities(
     path: &Path,
 ) -> Result<Vec<MoleculeEntity>, AdapterError> {
@@ -52,250 +45,29 @@ pub fn bcif_file_to_entities(
     bcif_to_entities(&bytes)
 }
 
-// ---------------------------------------------------------------------------
-// Internal parsing
-// ---------------------------------------------------------------------------
-
-fn decompress_if_gzip(bytes: &[u8]) -> Result<Vec<u8>, AdapterError> {
-    if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
-        let mut decoder = flate2::read::GzDecoder::new(bytes);
-        let mut out = Vec::new();
-        let _bytes_read = decoder.read_to_end(&mut out).map_err(|e| {
-            AdapterError::InvalidFormat(format!(
-                "Gzip decompression failed: {e}"
-            ))
-        })?;
-        Ok(out)
-    } else {
-        Ok(bytes.to_vec())
-    }
+/// Decode BinaryCIF bytes into one entity list per `pdbx_PDB_model_num`.
+///
+/// Files without a model column collapse to a single bucket.
+///
+/// # Errors
+///
+/// Returns [`AdapterError`] if parsing fails.
+pub fn bcif_to_all_models(
+    bytes: &[u8],
+) -> Result<Vec<Vec<MoleculeEntity>>, AdapterError> {
+    decode::decode_to_all_models(bytes)
 }
 
-/// Parse BinaryCIF bytes into flat Coords (internal).
-#[allow(
-    clippy::too_many_lines,
-    reason = "coordinate extraction from BinaryCIF requires processing many \
-              columns"
-)]
-fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, AdapterError> {
-    let data = decompress_if_gzip(raw_bytes)?;
-    let root = decode_msgpack(&data)?;
-
-    let data_blocks = root
-        .get("dataBlocks")
-        .and_then(MsgVal::as_array)
-        .ok_or_else(|| {
-            AdapterError::InvalidFormat("Missing 'dataBlocks'".into())
-        })?;
-
-    if data_blocks.is_empty() {
-        return Err(AdapterError::InvalidFormat("No data blocks found".into()));
-    }
-
-    let block = &data_blocks[0];
-    let categories = block
-        .get("categories")
-        .and_then(MsgVal::as_array)
-        .ok_or_else(|| {
-            AdapterError::InvalidFormat(
-                "Missing 'categories' in data block".into(),
-            )
-        })?;
-
-    let atom_site = categories
-        .iter()
-        .find(|cat| {
-            cat.get("name").and_then(MsgVal::as_str) == Some("_atom_site")
-        })
-        .ok_or_else(|| {
-            AdapterError::InvalidFormat("No '_atom_site' category found".into())
-        })?;
-
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "row count fits in usize"
-    )]
-    #[allow(clippy::cast_sign_loss, reason = "row count is non-negative")]
-    let row_count = atom_site
-        .get("rowCount")
-        .and_then(MsgVal::as_i64)
-        .ok_or_else(|| {
-            AdapterError::InvalidFormat("Missing 'rowCount'".into())
-        })? as usize;
-
-    let columns = atom_site
-        .get("columns")
-        .and_then(MsgVal::as_array)
-        .ok_or_else(|| {
-            AdapterError::InvalidFormat("Missing 'columns'".into())
-        })?;
-
-    let col_map: HashMap<&str, &MsgVal> = columns
-        .iter()
-        .filter_map(|col| {
-            let name = col.get("name")?.as_str()?;
-            Some((name, col))
-        })
-        .collect();
-
-    let cartn_x = decode_float_col(&col_map, "Cartn_x", row_count)?;
-    let cartn_y = decode_float_col(&col_map, "Cartn_y", row_count)?;
-    let cartn_z = decode_float_col(&col_map, "Cartn_z", row_count)?;
-    let label_atom_id =
-        decode_string_col(&col_map, "label_atom_id", row_count)?;
-    let label_comp_id =
-        decode_string_col(&col_map, "label_comp_id", row_count)?;
-    let label_asym_id =
-        decode_string_col(&col_map, "label_asym_id", row_count)?;
-    let label_seq_id = decode_int_col(&col_map, "label_seq_id", row_count)?;
-
-    let occupancy = decode_float_col_opt(&col_map, "occupancy", row_count, 1.0);
-    let b_factor =
-        decode_float_col_opt(&col_map, "B_iso_or_equiv", row_count, 0.0);
-
-    let type_symbol =
-        decode_string_col(&col_map, "type_symbol", row_count).ok();
-
-    let mut atoms = Vec::with_capacity(row_count);
-    let mut chain_ids = Vec::with_capacity(row_count);
-    let mut res_names = Vec::with_capacity(row_count);
-    let mut res_nums = Vec::with_capacity(row_count);
-    let mut atom_names = Vec::with_capacity(row_count);
-    let mut elements = Vec::with_capacity(row_count);
-    let mut chain_mapper = ChainIdMapper::new();
-
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "f64→f32 truncation is intentional for coordinate storage"
-    )]
-    for i in 0..row_count {
-        atoms.push(CoordsAtom {
-            x: cartn_x[i] as f32,
-            y: cartn_y[i] as f32,
-            z: cartn_z[i] as f32,
-            occupancy: occupancy[i] as f32,
-            b_factor: b_factor[i] as f32,
-        });
-
-        chain_ids.push(chain_mapper.get_or_assign(&label_asym_id[i]));
-
-        let mut rn = [b' '; 3];
-        for (j, b) in label_comp_id[i].bytes().take(3).enumerate() {
-            rn[j] = b;
-        }
-        res_names.push(rn);
-
-        res_nums.push(label_seq_id[i]);
-
-        let mut an = [b' '; 4];
-        for (j, b) in label_atom_id[i].bytes().take(4).enumerate() {
-            an[j] = b;
-        }
-        atom_names.push(an);
-
-        let elem = type_symbol.as_ref().map_or_else(
-            || Element::from_atom_name(&label_atom_id[i]),
-            |ts| Element::from_symbol(&ts[i]),
-        );
-        elements.push(elem);
-    }
-
-    if atoms.is_empty() {
-        return Err(AdapterError::InvalidFormat(
-            "No ATOM records found in BinaryCIF".into(),
-        ));
-    }
-
-    Ok(Coords {
-        num_atoms: atoms.len(),
-        atoms,
-        chain_ids,
-        res_names,
-        res_nums,
-        atom_names,
-        elements,
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Column extraction helpers
-// ---------------------------------------------------------------------------
-
-fn get_col_data<'a>(
-    col_map: &HashMap<&str, &'a MsgVal>,
-    name: &str,
-) -> Result<&'a MsgVal, AdapterError> {
-    let col = col_map.get(name).ok_or_else(|| {
-        AdapterError::InvalidFormat(format!("Missing column '{name}'"))
+/// Load a BinaryCIF file and return one entity list per `pdbx_PDB_model_num`.
+///
+/// # Errors
+///
+/// Returns [`AdapterError`] if the file cannot be read or parsing fails.
+pub fn bcif_file_to_all_models(
+    path: &Path,
+) -> Result<Vec<Vec<MoleculeEntity>>, AdapterError> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        AdapterError::InvalidFormat(format!("Failed to read file: {e}"))
     })?;
-    col.get("data").ok_or_else(|| {
-        AdapterError::InvalidFormat(format!("Column '{name}' has no data"))
-    })
-}
-
-fn decode_float_col(
-    col_map: &HashMap<&str, &MsgVal>,
-    name: &str,
-    expected: usize,
-) -> Result<Vec<f64>, AdapterError> {
-    let data = get_col_data(col_map, name)?;
-    match decode_column(data)? {
-        ColData::FloatArray(v) if v.len() == expected => Ok(v),
-        ColData::FloatArray(v) => Err(AdapterError::InvalidFormat(format!(
-            "Column '{name}': expected {expected} rows, got {}",
-            v.len()
-        ))),
-        ColData::IntArray(v) if v.len() == expected => {
-            Ok(v.iter().map(|&x| f64::from(x)).collect())
-        }
-        _ => Err(AdapterError::InvalidFormat(format!(
-            "Column '{name}': expected float array"
-        ))),
-    }
-}
-
-fn decode_float_col_opt(
-    col_map: &HashMap<&str, &MsgVal>,
-    name: &str,
-    count: usize,
-    default: f64,
-) -> Vec<f64> {
-    decode_float_col(col_map, name, count)
-        .unwrap_or_else(|_| vec![default; count])
-}
-
-fn decode_int_col(
-    col_map: &HashMap<&str, &MsgVal>,
-    name: &str,
-    expected: usize,
-) -> Result<Vec<i32>, AdapterError> {
-    let data = get_col_data(col_map, name)?;
-    match decode_column(data)? {
-        ColData::IntArray(v) if v.len() == expected => Ok(v),
-        ColData::IntArray(v) => Err(AdapterError::InvalidFormat(format!(
-            "Column '{name}': expected {expected} rows, got {}",
-            v.len()
-        ))),
-        _ => Err(AdapterError::InvalidFormat(format!(
-            "Column '{name}': expected int array"
-        ))),
-    }
-}
-
-fn decode_string_col(
-    col_map: &HashMap<&str, &MsgVal>,
-    name: &str,
-    expected: usize,
-) -> Result<Vec<String>, AdapterError> {
-    let data = get_col_data(col_map, name)?;
-    match decode_column(data)? {
-        ColData::StringArray(v) if v.len() == expected => Ok(v),
-        ColData::StringArray(v) => Err(AdapterError::InvalidFormat(format!(
-            "Column '{name}': expected {expected} rows, got {}",
-            v.len()
-        ))),
-        _ => Err(AdapterError::InvalidFormat(format!(
-            "Column '{name}': expected string array"
-        ))),
-    }
+    bcif_to_all_models(&bytes)
 }

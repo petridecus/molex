@@ -10,7 +10,10 @@ pub mod pdb;
 pub mod atomworks;
 
 // Entity-first re-exports.
-pub use bcif::{bcif_file_to_entities, bcif_to_entities};
+pub use bcif::{
+    bcif_file_to_all_models, bcif_file_to_entities, bcif_to_all_models,
+    bcif_to_entities,
+};
 pub use cif::{
     mmcif_file_to_all_models, mmcif_file_to_entities, mmcif_str_to_all_models,
     mmcif_str_to_entities,
