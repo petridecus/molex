@@ -48,7 +48,7 @@ impl BulkEntity {
 
     /// Construct from flat `Coords` atom indices during entity splitting.
     #[must_use]
-    pub fn from_coords_indices(
+    pub(crate) fn from_coords_indices(
         id: EntityId,
         mol_type: MoleculeType,
         indices: &[usize],

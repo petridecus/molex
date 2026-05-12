@@ -25,7 +25,6 @@ pub mod bond;
 pub mod chemistry;
 pub mod element;
 pub mod entity;
-pub mod ffi;
 pub mod ops;
 
 #[cfg(feature = "python")]
@@ -42,18 +41,18 @@ pub use element::Element;
 pub use entity::molecule::atom::Atom;
 pub use entity::molecule::protein::{ResidueBackbone, Sidechain};
 pub use entity::molecule::{MoleculeEntity, MoleculeType, NucleotideRing};
-pub use ops::codec::{Coords, CoordsAtom, CoordsError};
+pub use ops::codec::AdapterError;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 #[pymodule(name = "molex")]
 fn molex(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
-    // Core COORDS functions
-    m.add_function(wrap_pyfunction!(python::pdb_to_coords, m)?)?;
-    m.add_function(wrap_pyfunction!(python::mmcif_to_coords, m)?)?;
-    m.add_function(wrap_pyfunction!(python::coords_to_pdb, m)?)?;
-    m.add_function(wrap_pyfunction!(python::deserialize_coords_py, m)?)?;
+    // ASSEM01-based IO helpers (replaces the retired COORDS01 surface).
+    m.add_function(wrap_pyfunction!(python::pdb_to_assembly_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(python::mmcif_to_assembly_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(python::assembly_bytes_to_pdb, m)?)?;
+    m.add_function(wrap_pyfunction!(python::deserialize_assembly_bytes, m)?)?;
     // AtomArray / AtomArrayPlus converters (entity-aware, preserves molecule
     // types and bonds)
     m.add_function(wrap_pyfunction!(
@@ -69,15 +68,11 @@ fn molex(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        adapters::atomworks::coords_to_atom_array,
+        adapters::atomworks::assembly_bytes_to_atom_array,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        adapters::atomworks::coords_to_atom_array_plus,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        adapters::atomworks::atom_array_to_coords,
+        adapters::atomworks::assembly_bytes_to_atom_array_plus,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(

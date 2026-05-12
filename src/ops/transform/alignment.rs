@@ -4,9 +4,7 @@ use glam::{Mat3, Vec3};
 
 use super::extract::{centroid, extract_ca_positions};
 use crate::entity::molecule::MoleculeEntity;
-use crate::ops::codec::deserialize::deserialize_assembly_entities;
-use crate::ops::codec::serialize::serialize_entities;
-use crate::ops::codec::{deserialize, serialize, CoordsError, ASSEMBLY_MAGIC};
+use crate::ops::codec::AdapterError;
 
 /// Kabsch algorithm: find optimal rotation and translation to align target to
 /// reference.
@@ -171,16 +169,16 @@ pub fn transform_entities_with_scale(
 ///
 /// # Errors
 ///
-/// Returns `CoordsError::InvalidFormat` if CA count differs between reference
+/// Returns `AdapterError::InvalidFormat` if CA count differs between reference
 /// and entities, or if the Kabsch alignment fails.
 pub fn align_to_reference(
     entities: &mut [MoleculeEntity],
     reference_ca: &[Vec3],
-) -> Result<(), CoordsError> {
+) -> Result<(), AdapterError> {
     let predicted_ca = extract_ca_positions(entities);
 
     if predicted_ca.len() != reference_ca.len() {
-        return Err(CoordsError::InvalidFormat(format!(
+        return Err(AdapterError::InvalidFormat(format!(
             "CA count mismatch: reference={}, entities={}",
             reference_ca.len(),
             predicted_ca.len()
@@ -189,39 +187,11 @@ pub fn align_to_reference(
 
     let (rotation, translation) = kabsch_alignment(reference_ca, &predicted_ca)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat("Kabsch alignment failed".to_owned())
+            AdapterError::InvalidFormat("Kabsch alignment failed".to_owned())
         })?;
 
     transform_entities(entities, rotation, translation);
     Ok(())
-}
-
-/// Align coordinate bytes to match reference CA positions.
-///
-/// Supports both COORDS and ASSEM01 formats — detects automatically.
-/// Returns new aligned bytes in the same format as the input.
-///
-/// # Errors
-///
-/// Returns `CoordsError` if deserialization, alignment, or re-serialization
-/// fails.
-pub fn align_coords_bytes(
-    coords_bytes: &[u8],
-    reference_ca: &[Vec3],
-) -> Result<Vec<u8>, CoordsError> {
-    if coords_bytes.len() >= 8 && &coords_bytes[0..8] == ASSEMBLY_MAGIC {
-        // Skip Assembly::new; we re-serialize without inspecting derived data.
-        let mut entities = deserialize_assembly_entities(coords_bytes)?;
-        align_to_reference(&mut entities, reference_ca)?;
-        serialize_entities(&entities)
-    } else {
-        // Plain COORDS path: deserialize, align via entity bridge, reserialize
-        let coords = deserialize(coords_bytes)?;
-        let mut entities = crate::ops::codec::split_into_entities(&coords);
-        align_to_reference(&mut entities, reference_ca)?;
-        let aligned = crate::ops::codec::merge_entities(&entities);
-        serialize(&aligned)
-    }
 }
 
 // ============================================================================

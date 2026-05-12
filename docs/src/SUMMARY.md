@@ -19,5 +19,5 @@
 - [Adapters](modules/adapters.md)
 - [Analysis](modules/analysis.md)
 - [Codec](modules/codec.md)
-- [C FFI](modules/ffi.md)
+- [Wire Format](modules/wire.md)
 - [Python Bindings](modules/python.md)

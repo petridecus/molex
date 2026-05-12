@@ -9,9 +9,7 @@ use super::{molecule_type_to_chain_type_id, molecule_type_to_mol_type_str};
 use crate::analysis::bonds::{infer_bonds, BondOrder, DEFAULT_TOLERANCE};
 use crate::element::Element;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
-use crate::ops::codec::{
-    deserialize, deserialize_assembly, split_into_entities,
-};
+use crate::ops::wire::deserialize_assembly;
 
 /// Flat per-atom annotation data collected from entities.
 pub(crate) struct AtomData {
@@ -304,42 +302,46 @@ pub fn entities_to_atom_array_plus(
     Ok(as_plus.call1((atom_array,))?.unbind())
 }
 
-/// Convert flat COORDS bytes to a Biotite `AtomArray`.
+/// Convert ASSEM01 bytes to a Biotite `AtomArray`.
+///
+/// Replaces the old `coords_to_atom_array(coords_bytes)` (COORDS01-shaped),
+/// which was retired with the COORDS01 wire format. Callers should pass
+/// ASSEM01 bytes (the output of `serialize_assembly` / `assembly_bytes`).
 ///
 /// # Errors
 ///
-/// Returns `PyErr` if the coords bytes cannot be deserialized or if
-/// Python/Biotite operations fail.
+/// Returns `PyErr` if the bytes cannot be deserialized or if Python/Biotite
+/// operations fail.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
-pub fn coords_to_atom_array(
+pub fn assembly_bytes_to_atom_array(
     py: Python,
-    coords_bytes: Vec<u8>,
+    bytes: Vec<u8>,
 ) -> PyResult<Py<PyAny>> {
-    let coords = deserialize(&coords_bytes).map_err(|e| {
+    let assembly = deserialize_assembly(&bytes).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })?;
-    let entities = split_into_entities(&coords);
-    entities_to_atom_array_impl(py, &entities)
+    entities_to_atom_array_impl(py, assembly.entities())
 }
 
-/// Convert flat COORDS bytes to an `AtomArrayPlus`.
+/// Convert ASSEM01 bytes to an `AtomArrayPlus`.
+///
+/// Replaces the old `coords_to_atom_array_plus(coords_bytes)`.
 ///
 /// # Errors
 ///
-/// Returns `PyErr` if the coords bytes cannot be deserialized or if
+/// Returns `PyErr` if the bytes cannot be deserialized or if
 /// Python/AtomWorks operations fail.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
-pub fn coords_to_atom_array_plus(
+pub fn assembly_bytes_to_atom_array_plus(
     py: Python,
-    coords_bytes: Vec<u8>,
+    bytes: Vec<u8>,
 ) -> PyResult<Py<PyAny>> {
-    let coords = deserialize(&coords_bytes).map_err(|e| {
+    let assembly = deserialize_assembly(&bytes).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })?;
-    let entities = split_into_entities(&coords);
-    let atom_array = entities_to_atom_array_impl(py, &entities)?;
+    let atom_array = entities_to_atom_array_impl(py, assembly.entities())?;
     let as_plus = py
         .import("atomworks.io.utils.atom_array_plus")?
         .getattr("as_atom_array_plus")?;

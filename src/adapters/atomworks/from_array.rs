@@ -11,9 +11,8 @@ use super::{chain_type_id_to_molecule_type, mol_type_str_to_molecule_type};
 use crate::assembly::Assembly;
 use crate::element::Element;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
-use crate::ops::codec::{
-    serialize_assembly, ChainIdMapper, Coords, CoordsAtom,
-};
+use crate::ops::codec::{ChainIdMapper, Coords, CoordsAtom};
+use crate::ops::wire::serialize_assembly;
 
 /// Determine per-atom entity ID assignments from annotations on the atom array.
 fn determine_entity_ids(
@@ -336,29 +335,6 @@ fn build_all_entities(
     Ok(entities)
 }
 
-/// Convert a Biotite `AtomArray` (or `AtomArrayPlus`) back to flat COORDS
-/// bytes.
-///
-/// # Errors
-///
-/// Returns `PyErr` if the atom array cannot be converted to entities or if
-/// serialization fails.
-#[pyfunction]
-pub fn atom_array_to_coords(
-    py: Python,
-    atom_array: Py<PyAny>,
-) -> PyResult<Vec<u8>> {
-    let assembly_bytes = atom_array_to_entities(py, atom_array)?;
-    let assembly = crate::ops::codec::deserialize_assembly(&assembly_bytes)
-        .map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-        })?;
-    let coords = crate::ops::codec::merge_entities(assembly.entities());
-    crate::ops::codec::serialize(&coords).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-    })
-}
-
 /// Convert an AtomArray to `Vec<MoleculeEntity>` (Rust structs).
 ///
 /// Returns entity objects directly, useful when you need Rust-side
@@ -373,7 +349,7 @@ pub fn atom_array_to_entity_vec(
 ) -> PyResult<Vec<MoleculeEntity>> {
     let atom_array_py: Py<PyAny> = atom_array.clone().unbind();
     let bytes = atom_array_to_entities(py, atom_array_py)?;
-    crate::ops::codec::deserialize_assembly(&bytes)
+    crate::ops::wire::deserialize_assembly(&bytes)
         .map(|a| {
             a.entities()
                 .iter()

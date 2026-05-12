@@ -7,7 +7,7 @@
 
 use std::io::Read;
 
-use crate::ops::codec::CoordsError;
+use crate::ops::codec::AdapterError;
 
 // ---------------------------------------------------------------------------
 // Lightweight MessagePack value tree
@@ -102,17 +102,17 @@ impl MsgVal {
 // MessagePack decoder
 // ---------------------------------------------------------------------------
 
-pub(crate) fn decode_msgpack(data: &[u8]) -> Result<MsgVal, CoordsError> {
+pub(crate) fn decode_msgpack(data: &[u8]) -> Result<MsgVal, AdapterError> {
     let mut cursor = std::io::Cursor::new(data);
     read_value(&mut cursor)
 }
 
 fn read_bytes<const N: usize>(
     rd: &mut std::io::Cursor<&[u8]>,
-) -> Result<[u8; N], CoordsError> {
+) -> Result<[u8; N], AdapterError> {
     let mut buf = [0u8; N];
     rd.read_exact(&mut buf).map_err(|e| {
-        CoordsError::InvalidFormat(format!("msgpack read {N} bytes: {e}"))
+        AdapterError::InvalidFormat(format!("msgpack read {N} bytes: {e}"))
     })?;
     Ok(buf)
 }
@@ -121,11 +121,11 @@ fn read_bytes<const N: usize>(
     clippy::too_many_lines,
     reason = "msgpack format requires exhaustive marker matching"
 )]
-fn read_value(rd: &mut std::io::Cursor<&[u8]>) -> Result<MsgVal, CoordsError> {
+fn read_value(rd: &mut std::io::Cursor<&[u8]>) -> Result<MsgVal, AdapterError> {
     use rmp::Marker;
 
     let marker = rmp::decode::read_marker(rd).map_err(|e| {
-        CoordsError::InvalidFormat(format!("msgpack marker: {e:?}"))
+        AdapterError::InvalidFormat(format!("msgpack marker: {e:?}"))
     })?;
 
     match marker {
@@ -204,7 +204,7 @@ fn read_value(rd: &mut std::io::Cursor<&[u8]>) -> Result<MsgVal, CoordsError> {
             read_map(rd, len)
         }
 
-        other => Err(CoordsError::InvalidFormat(format!(
+        other => Err(AdapterError::InvalidFormat(format!(
             "Unsupported msgpack marker: {other:?}"
         ))),
     }
@@ -213,13 +213,13 @@ fn read_value(rd: &mut std::io::Cursor<&[u8]>) -> Result<MsgVal, CoordsError> {
 fn read_string(
     rd: &mut std::io::Cursor<&[u8]>,
     len: usize,
-) -> Result<MsgVal, CoordsError> {
+) -> Result<MsgVal, AdapterError> {
     let mut buf = vec![0u8; len];
     rd.read_exact(&mut buf).map_err(|e| {
-        CoordsError::InvalidFormat(format!("msgpack string read: {e}"))
+        AdapterError::InvalidFormat(format!("msgpack string read: {e}"))
     })?;
     let s = String::from_utf8(buf).map_err(|e| {
-        CoordsError::InvalidFormat(format!("msgpack string utf8: {e}"))
+        AdapterError::InvalidFormat(format!("msgpack string utf8: {e}"))
     })?;
     Ok(MsgVal::Str(s))
 }
@@ -227,10 +227,10 @@ fn read_string(
 fn read_bin(
     rd: &mut std::io::Cursor<&[u8]>,
     len: usize,
-) -> Result<MsgVal, CoordsError> {
+) -> Result<MsgVal, AdapterError> {
     let mut buf = vec![0u8; len];
     rd.read_exact(&mut buf).map_err(|e| {
-        CoordsError::InvalidFormat(format!("msgpack bin read: {e}"))
+        AdapterError::InvalidFormat(format!("msgpack bin read: {e}"))
     })?;
     Ok(MsgVal::Bin(buf))
 }
@@ -238,7 +238,7 @@ fn read_bin(
 fn read_array(
     rd: &mut std::io::Cursor<&[u8]>,
     len: usize,
-) -> Result<MsgVal, CoordsError> {
+) -> Result<MsgVal, AdapterError> {
     let mut arr = Vec::with_capacity(len);
     for _ in 0..len {
         arr.push(read_value(rd)?);
@@ -249,7 +249,7 @@ fn read_array(
 fn read_map(
     rd: &mut std::io::Cursor<&[u8]>,
     len: usize,
-) -> Result<MsgVal, CoordsError> {
+) -> Result<MsgVal, AdapterError> {
     let mut pairs = Vec::with_capacity(len);
     for _ in 0..len {
         let k = read_value(rd)?;
@@ -273,20 +273,24 @@ pub(crate) enum ColData {
 
 pub(crate) fn decode_column(
     data_node: &MsgVal,
-) -> Result<ColData, CoordsError> {
+) -> Result<ColData, AdapterError> {
     let raw_bytes =
         data_node
             .get("data")
             .and_then(MsgVal::as_bin)
             .ok_or_else(|| {
-                CoordsError::InvalidFormat("Column missing 'data' bytes".into())
+                AdapterError::InvalidFormat(
+                    "Column missing 'data' bytes".into(),
+                )
             })?;
 
     let encodings = data_node
         .get("encoding")
         .and_then(MsgVal::as_array)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat("Column missing 'encoding' array".into())
+            AdapterError::InvalidFormat(
+                "Column missing 'encoding' array".into(),
+            )
         })?;
 
     if encodings.is_empty() {
@@ -310,7 +314,7 @@ pub(crate) fn decode_column(
     for enc in encodings.iter().rev() {
         let kind =
             enc.get("kind").and_then(MsgVal::as_str).ok_or_else(|| {
-                CoordsError::InvalidFormat("Encoding missing 'kind'".into())
+                AdapterError::InvalidFormat("Encoding missing 'kind'".into())
             })?;
 
         current = match kind {
@@ -323,7 +327,7 @@ pub(crate) fn decode_column(
             "Delta" => decode_delta(current, enc)?,
             "IntegerPacking" => decode_integer_packing(current, enc)?,
             other => {
-                return Err(CoordsError::InvalidFormat(format!(
+                return Err(AdapterError::InvalidFormat(format!(
                     "Unknown encoding kind: {other}"
                 )))
             }
@@ -340,9 +344,9 @@ pub(crate) fn decode_column(
 fn decode_byte_array(
     input: ColData,
     enc: &MsgVal,
-) -> Result<ColData, CoordsError> {
+) -> Result<ColData, AdapterError> {
     let ColData::Bytes(bytes) = input else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "ByteArray expects bytes input".into(),
         ));
     };
@@ -356,7 +360,7 @@ fn decode_byte_array(
         reason = "type_id is a non-negative BinaryCIF type tag"
     )]
     let type_id = enc.get("type").and_then(MsgVal::as_i64).ok_or_else(|| {
-        CoordsError::InvalidFormat("ByteArray missing 'type'".into())
+        AdapterError::InvalidFormat("ByteArray missing 'type'".into())
     })? as u8;
 
     match type_id {
@@ -412,7 +416,7 @@ fn decode_byte_array(
                 })
                 .collect(),
         )),
-        _ => Err(CoordsError::InvalidFormat(format!(
+        _ => Err(AdapterError::InvalidFormat(format!(
             "Unknown ByteArray type: {type_id}"
         ))),
     }
@@ -421,16 +425,16 @@ fn decode_byte_array(
 fn decode_fixed_point(
     input: ColData,
     enc: &MsgVal,
-) -> Result<ColData, CoordsError> {
+) -> Result<ColData, AdapterError> {
     let ColData::IntArray(ints) = input else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "FixedPoint expects int array".into(),
         ));
     };
 
     let factor =
         enc.get("factor").and_then(MsgVal::as_f64).ok_or_else(|| {
-            CoordsError::InvalidFormat("FixedPoint missing 'factor'".into())
+            AdapterError::InvalidFormat("FixedPoint missing 'factor'".into())
         })?;
 
     let inv = 1.0 / factor;
@@ -442,18 +446,18 @@ fn decode_fixed_point(
 fn decode_interval_quantization(
     input: ColData,
     enc: &MsgVal,
-) -> Result<ColData, CoordsError> {
+) -> Result<ColData, AdapterError> {
     let ColData::IntArray(ints) = input else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "IntervalQuantization expects int array".into(),
         ));
     };
 
     let min = enc.get("min").and_then(MsgVal::as_f64).ok_or_else(|| {
-        CoordsError::InvalidFormat("IntervalQuantization missing 'min'".into())
+        AdapterError::InvalidFormat("IntervalQuantization missing 'min'".into())
     })?;
     let max = enc.get("max").and_then(MsgVal::as_f64).ok_or_else(|| {
-        CoordsError::InvalidFormat("IntervalQuantization missing 'max'".into())
+        AdapterError::InvalidFormat("IntervalQuantization missing 'max'".into())
     })?;
     #[allow(
         clippy::cast_precision_loss,
@@ -463,7 +467,7 @@ fn decode_interval_quantization(
         enc.get("numSteps")
             .and_then(MsgVal::as_i64)
             .ok_or_else(|| {
-                CoordsError::InvalidFormat(
+                AdapterError::InvalidFormat(
                     "IntervalQuantization missing 'numSteps'".into(),
                 )
             })? as f64;
@@ -479,15 +483,15 @@ fn decode_interval_quantization(
 fn decode_run_length(
     input: ColData,
     _enc: &MsgVal,
-) -> Result<ColData, CoordsError> {
+) -> Result<ColData, AdapterError> {
     let ColData::IntArray(ints) = input else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "RunLength expects int array".into(),
         ));
     };
 
     if ints.len() % 2 != 0 {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "RunLength array length must be even".into(),
         ));
     }
@@ -505,9 +509,9 @@ fn decode_run_length(
     Ok(ColData::IntArray(result))
 }
 
-fn decode_delta(input: ColData, enc: &MsgVal) -> Result<ColData, CoordsError> {
+fn decode_delta(input: ColData, enc: &MsgVal) -> Result<ColData, AdapterError> {
     let ColData::IntArray(mut ints) = input else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "Delta expects int array".into(),
         ));
     };
@@ -538,18 +542,18 @@ fn decode_delta(input: ColData, enc: &MsgVal) -> Result<ColData, CoordsError> {
     clippy::cast_sign_loss,
     reason = "byteCount (1|2) and srcSize are small non-negative per spec"
 )]
-fn int_packing_params(enc: &MsgVal) -> Result<(usize, i32, i32), CoordsError> {
+fn int_packing_params(enc: &MsgVal) -> Result<(usize, i32, i32), AdapterError> {
     let byte_count =
         enc.get("byteCount")
             .and_then(MsgVal::as_i64)
             .ok_or_else(|| {
-                CoordsError::InvalidFormat(
+                AdapterError::InvalidFormat(
                     "IntegerPacking missing 'byteCount'".into(),
                 )
             })? as i32;
     let src_size =
         enc.get("srcSize").and_then(MsgVal::as_i64).ok_or_else(|| {
-            CoordsError::InvalidFormat(
+            AdapterError::InvalidFormat(
                 "IntegerPacking missing 'srcSize'".into(),
             )
         })? as usize;
@@ -570,9 +574,9 @@ fn int_packing_params(enc: &MsgVal) -> Result<(usize, i32, i32), CoordsError> {
 fn decode_integer_packing(
     input: ColData,
     enc: &MsgVal,
-) -> Result<ColData, CoordsError> {
+) -> Result<ColData, AdapterError> {
     let ColData::IntArray(packed) = input else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "IntegerPacking expects int array".into(),
         ));
     };
@@ -609,12 +613,12 @@ fn decode_string_array_column(
     raw_bytes: &[u8],
     sa_enc: &MsgVal,
     remaining_encodings: &[MsgVal],
-) -> Result<ColData, CoordsError> {
+) -> Result<ColData, AdapterError> {
     let string_data = sa_enc
         .get("stringData")
         .and_then(MsgVal::as_str)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat(
+            AdapterError::InvalidFormat(
                 "StringArray missing 'stringData'".into(),
             )
         })?;
@@ -623,20 +627,20 @@ fn decode_string_array_column(
         .get("offsets")
         .and_then(MsgVal::as_bin)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat("StringArray missing 'offsets'".into())
+            AdapterError::InvalidFormat("StringArray missing 'offsets'".into())
         })?;
     let offset_encoding = sa_enc
         .get("offsetEncoding")
         .and_then(MsgVal::as_array)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat(
+            AdapterError::InvalidFormat(
                 "StringArray missing 'offsetEncoding'".into(),
             )
         })?;
 
     let offset_data_node = build_encoded_data(offset_bytes, offset_encoding);
     let ColData::IntArray(offsets) = decode_column(&offset_data_node)? else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "StringArray offsets must decode to int array".into(),
         ));
     };
@@ -658,7 +662,7 @@ fn decode_string_array_column(
         )]
         let end = w[1] as usize;
         if end > string_data.len() || start > end {
-            return Err(CoordsError::InvalidFormat(
+            return Err(AdapterError::InvalidFormat(
                 "StringArray offset out of bounds".into(),
             ));
         }
@@ -669,7 +673,7 @@ fn decode_string_array_column(
         .get("dataEncoding")
         .and_then(MsgVal::as_array)
         .ok_or_else(|| {
-        CoordsError::InvalidFormat("StringArray missing 'dataEncoding'".into())
+        AdapterError::InvalidFormat("StringArray missing 'dataEncoding'".into())
     })?;
 
     let mut index_encodings = Vec::new();
@@ -678,7 +682,7 @@ fn decode_string_array_column(
 
     let index_data_node = build_encoded_data(raw_bytes, &index_encodings);
     let ColData::IntArray(indices) = decode_column(&index_data_node)? else {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "StringArray indices must decode to int array".into(),
         ));
     };

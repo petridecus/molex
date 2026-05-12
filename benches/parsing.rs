@@ -15,8 +15,7 @@ use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
 };
 use molex::adapters::cif::mmcif_str_to_entities;
-use molex::adapters::pdb::{pdb_str_to_coords, pdb_str_to_entities};
-use molex::ops::codec::split_into_entities;
+use molex::adapters::pdb::pdb_str_to_entities;
 
 fn generate_pdb(n_residues: usize) -> String {
     let mut pdb = String::new();
@@ -90,21 +89,6 @@ fn bench_pdb_parsing(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_pdb_entity_split(c: &mut Criterion) {
-    let mut group = c.benchmark_group("pdb_split");
-    for n_residues in [10, 50, 200, 1000] {
-        let pdb = generate_pdb(n_residues);
-        let n_atoms = n_residues * 5;
-        let coords = pdb_str_to_coords(&pdb).unwrap();
-        group.bench_with_input(
-            BenchmarkId::new("split_into_entities", format!("{n_atoms}_atoms")),
-            &coords,
-            |b, coords| b.iter(|| split_into_entities(black_box(coords))),
-        );
-    }
-    group.finish();
-}
-
 fn bench_mmcif_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("mmcif_parse");
     for n_residues in [10, 50, 200, 1000] {
@@ -119,10 +103,5 @@ fn bench_mmcif_parsing(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_pdb_parsing,
-    bench_pdb_entity_split,
-    bench_mmcif_parsing
-);
+criterion_group!(benches, bench_pdb_parsing, bench_mmcif_parsing);
 criterion_main!(benches);

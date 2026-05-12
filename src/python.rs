@@ -1,109 +1,76 @@
-//! Python bindings for core COORDS operations.
+//! Python bindings for parsing structure files into ASSEM01 bytes and
+//! emitting PDB from ASSEM01 bytes.
+//!
+//! The legacy COORDS01-shaped helpers (`pdb_to_coords`, `coords_to_pdb`,
+//! etc.) were retired alongside the COORDS01 binary wire format. Use the
+//! `*_to_assembly_bytes` / `assembly_bytes_to_*` pair instead; the AtomArray
+//! interop in `adapters::atomworks` is unchanged.
 
 use pyo3::prelude::*;
 
 use crate::adapters::{cif, pdb};
-use crate::ops::codec::{deserialize, serialize};
+use crate::ops::wire::{
+    assembly_bytes, deserialize_assembly, serialize_assembly,
+};
 
-/// Deserialize and re-serialize COORDS bytes (round-trip validation).
-///
-/// # Errors
-///
-/// Returns a `PyValueError` if the bytes cannot be deserialized or
-/// re-serialized as valid COORDS data.
-#[pyfunction]
-#[allow(clippy::needless_pass_by_value)]
-pub fn deserialize_coords_py(coords_bytes: Vec<u8>) -> PyResult<Vec<u8>> {
-    deserialize(&coords_bytes)
-        .and_then(|coords| serialize(&coords))
-        .map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-        })
-}
-
-/// Parse a PDB string into COORDS binary format.
+/// Parse a PDB string and emit ASSEM01 binary bytes.
 ///
 /// # Errors
 ///
 /// Returns a `PyValueError` if the PDB string cannot be parsed.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
-pub fn pdb_to_coords(pdb_str: String) -> PyResult<Vec<u8>> {
-    pdb::pdb_to_coords(&pdb_str).map_err(|e| {
+pub fn pdb_to_assembly_bytes(pdb_str: String) -> PyResult<Vec<u8>> {
+    let entities = pdb::pdb_str_to_entities(&pdb_str).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+    })?;
+    assembly_bytes(&entities).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })
 }
 
-/// Parse an mmCIF string into COORDS binary format.
+/// Parse an mmCIF string and emit ASSEM01 binary bytes.
 ///
 /// # Errors
 ///
 /// Returns a `PyValueError` if the mmCIF string cannot be parsed.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
-pub fn mmcif_to_coords(cif_str: String) -> PyResult<Vec<u8>> {
-    cif::mmcif_to_coords(&cif_str).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-    })
-}
-
-/// Convert COORDS binary data to a PDB-format string.
-///
-/// # Errors
-///
-/// Returns a `PyValueError` if the COORDS data cannot be converted to PDB
-/// format.
-#[pyfunction]
-#[allow(clippy::needless_pass_by_value)]
-pub fn coords_to_pdb(coords_bytes: Vec<u8>) -> PyResult<String> {
-    pdb::coords_to_pdb(&coords_bytes).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-    })
-}
-
-/// Convert COORDS binary data to a Python dict of atom arrays.
-///
-/// # Errors
-///
-/// Returns a `PyValueError` if the COORDS data cannot be deserialized.
-#[pyfunction]
-#[allow(clippy::needless_pass_by_value)]
-pub fn coords_to_atom_array(
-    py: Python,
-    coords_bytes: Vec<u8>,
-) -> PyResult<Py<PyAny>> {
-    let coords = deserialize(&coords_bytes).map_err(|e| {
+pub fn mmcif_to_assembly_bytes(cif_str: String) -> PyResult<Vec<u8>> {
+    let entities = cif::mmcif_str_to_entities(&cif_str).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
     })?;
+    assembly_bytes(&entities).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+    })
+}
 
-    let num_atoms = coords.num_atoms;
+/// Decode ASSEM01 bytes and emit a PDB-format string.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if the bytes cannot be deserialized.
+#[pyfunction]
+#[allow(clippy::needless_pass_by_value)]
+pub fn assembly_bytes_to_pdb(bytes: Vec<u8>) -> PyResult<String> {
+    let assembly = deserialize_assembly(&bytes).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+    })?;
+    Ok(pdb::assembly_to_pdb(&assembly))
+}
 
-    let coords_list: Vec<Vec<f32>> =
-        coords.atoms.iter().map(|a| vec![a.x, a.y, a.z]).collect();
-    let chain_ids: Vec<String> = coords
-        .chain_ids
-        .iter()
-        .map(|&c| (c as char).to_string())
-        .collect();
-    let res_nums: Vec<i32> = coords.res_nums.clone();
-    let res_names: Vec<String> = coords
-        .res_names
-        .iter()
-        .map(|b| std::str::from_utf8(b).unwrap_or("UNK").trim().to_owned())
-        .collect();
-    let atom_names: Vec<String> = coords
-        .atom_names
-        .iter()
-        .map(|b| std::str::from_utf8(b).unwrap_or("X").trim().to_owned())
-        .collect();
-
-    let dict = pyo3::types::PyDict::new(py);
-    dict.set_item("coord", coords_list)?;
-    dict.set_item("chain_id", chain_ids)?;
-    dict.set_item("res_id", res_nums)?;
-    dict.set_item("res_name", res_names)?;
-    dict.set_item("atom_name", atom_names)?;
-    dict.set_item("array_length", num_atoms)?;
-
-    Ok(dict.unbind().into_any())
+/// Round-trip ASSEM01 bytes through `Assembly` and back (validation).
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if the bytes cannot be deserialized or
+/// re-serialized.
+#[pyfunction]
+#[allow(clippy::needless_pass_by_value)]
+pub fn deserialize_assembly_bytes(bytes: Vec<u8>) -> PyResult<Vec<u8>> {
+    deserialize_assembly(&bytes)
+        .and_then(|assembly| serialize_assembly(&assembly))
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+        })
 }

@@ -5,7 +5,7 @@
 //! the fast path can't handle.
 
 use crate::element::Element;
-use crate::ops::codec::{ChainIdMapper, Coords, CoordsAtom, CoordsError};
+use crate::ops::codec::{AdapterError, ChainIdMapper, Coords, CoordsAtom};
 
 /// Column indices within the `_atom_site` loop.
 struct AtomSiteColumns {
@@ -73,7 +73,7 @@ impl AtomSiteColumns {
 #[allow(clippy::too_many_lines)]
 pub(crate) fn parse_mmcif_fast(
     input: &str,
-) -> Option<Result<Coords, CoordsError>> {
+) -> Option<Result<Coords, AdapterError>> {
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut pos = 0;
@@ -113,7 +113,7 @@ pub(crate) fn parse_mmcif_fast(
         for _ in 0..cols.ncols {
             skip_whitespace_and_comments(bytes, &mut pos);
             if pos >= len {
-                return Some(Err(CoordsError::InvalidFormat(
+                return Some(Err(AdapterError::InvalidFormat(
                     "Unexpected end of CIF data in _atom_site loop".into(),
                 )));
             }
@@ -174,7 +174,7 @@ pub(crate) fn parse_mmcif_fast(
     }
 
     if atoms.is_empty() {
-        return Some(Err(CoordsError::InvalidFormat(
+        return Some(Err(AdapterError::InvalidFormat(
             "No atoms found in CIF".into(),
         )));
     }

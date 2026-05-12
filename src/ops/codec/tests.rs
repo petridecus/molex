@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
+use crate::ops::wire::{assembly_bytes, deserialize_assembly};
 
 fn make_atom(x: f32) -> CoordsAtom {
     CoordsAtom {
@@ -32,16 +33,6 @@ fn atom_name(s: &str) -> [u8; 4] {
         name[i] = b;
     }
     name
-}
-
-fn make_full_atom(x: f32, y: f32, z: f32) -> CoordsAtom {
-    CoordsAtom {
-        x,
-        y,
-        z,
-        occupancy: 1.0,
-        b_factor: 0.0,
-    }
 }
 
 use crate::element::Element;
@@ -111,9 +102,20 @@ fn test_update_protein_entities_no_duplication() {
     assert_eq!(total, 7);
     assert_eq!(entities.len(), 3);
 
-    let prot = protein_coords(&entities);
-    assert_eq!(prot.num_atoms, 6);
-    assert!(prot.atoms[0].x >= 10.0);
+    let protein_atoms: usize = entities
+        .iter()
+        .filter(|e| e.molecule_type() == MoleculeType::Protein)
+        .map(MoleculeEntity::atom_count)
+        .sum();
+    assert_eq!(protein_atoms, 6);
+    let first_protein_atom_x = entities
+        .iter()
+        .find(|e| e.molecule_type() == MoleculeType::Protein)
+        .unwrap()
+        .atom_set()[0]
+        .position
+        .x;
+    assert!(first_protein_atom_x >= 10.0);
 }
 
 // -- Assembly byte layout --
@@ -359,7 +361,7 @@ fn test_split_mixed() {
 }
 
 #[test]
-fn test_merge_roundtrip() {
+fn test_split_atom_count_preserved() {
     let coords = Coords {
         num_atoms: 4,
         atoms: (0..4).map(|i| make_atom(i as f32)).collect(),
@@ -380,26 +382,8 @@ fn test_merge_roundtrip() {
         elements: vec![Element::Unknown; 4],
     };
     let entities = split_into_entities(&coords);
-    let merged = merge_entities(&entities);
-    assert_eq!(merged.num_atoms, coords.num_atoms);
-}
-
-#[test]
-fn test_extract_by_type() {
-    let coords = Coords {
-        num_atoms: 3,
-        atoms: (0..3).map(|i| make_atom(i as f32)).collect(),
-        chain_ids: vec![b'A', b'A', b'A'],
-        res_names: vec![res_name("ALA"), res_name("HOH"), res_name("ZN")],
-        res_nums: vec![1, 100, 200],
-        atom_names: vec![atom_name("CA"), atom_name("O"), atom_name("ZN")],
-        elements: vec![Element::Unknown; 3],
-    };
-    let entities = split_into_entities(&coords);
-    let protein = extract_by_type(&entities, MoleculeType::Protein);
-    assert!(protein.is_some());
-    assert_eq!(protein.unwrap().num_atoms, 1);
-    assert!(extract_by_type(&entities, MoleculeType::DNA).is_none());
+    let total: usize = entities.iter().map(MoleculeEntity::atom_count).sum();
+    assert_eq!(total, coords.num_atoms);
 }
 
 #[test]
@@ -559,89 +543,7 @@ fn test_split_modified_amino_acid_merges_into_protein() {
     assert_eq!(entities[0].atom_count(), 9);
 }
 
-// -- COORDS01 serialize/deserialize round-trip --
-
-#[test]
-fn test_coords_serialize_deserialize_roundtrip() {
-    let coords = Coords {
-        num_atoms: 3,
-        atoms: vec![
-            make_full_atom(1.5, 2.5, 3.5),
-            make_full_atom(4.0, 5.0, 6.0),
-            make_full_atom(7.0, 8.0, 9.0),
-        ],
-        chain_ids: vec![b'A', b'A', b'B'],
-        res_names: vec![res_name("ALA"), res_name("ALA"), res_name("GLY")],
-        res_nums: vec![1, 1, 2],
-        atom_names: vec![atom_name("N"), atom_name("CA"), atom_name("C")],
-        elements: vec![Element::N, Element::C, Element::C],
-    };
-    let bytes = serialize(&coords).unwrap();
-    let recovered = deserialize(&bytes).unwrap();
-
-    assert_eq!(recovered.num_atoms, 3);
-    assert!((recovered.atoms[0].x - 1.5).abs() < 1e-6);
-    assert_eq!(recovered.chain_ids, vec![b'A', b'A', b'B']);
-    assert_eq!(recovered.elements[0], Element::N);
-}
-
-#[test]
-fn test_coords_serialize_preserves_elements() {
-    let coords = Coords {
-        num_atoms: 2,
-        atoms: vec![
-            make_full_atom(0.0, 0.0, 0.0),
-            make_full_atom(1.0, 1.0, 1.0),
-        ],
-        chain_ids: vec![b'A'; 2],
-        res_names: vec![res_name("ALA"); 2],
-        res_nums: vec![1; 2],
-        atom_names: vec![atom_name("FE"), atom_name("ZN")],
-        elements: vec![Element::Fe, Element::Zn],
-    };
-    let bytes = serialize(&coords).unwrap();
-    let recovered = deserialize(&bytes).unwrap();
-    assert_eq!(recovered.elements[0], Element::Fe);
-    assert_eq!(recovered.elements[1], Element::Zn);
-}
-
-#[test]
-fn test_coords_single_atom_roundtrip() {
-    let coords = Coords {
-        num_atoms: 1,
-        atoms: vec![make_full_atom(42.0, -17.5, 0.001)],
-        chain_ids: vec![b'Z'],
-        res_names: vec![res_name("ZN")],
-        res_nums: vec![999],
-        atom_names: vec![atom_name("ZN")],
-        elements: vec![Element::Zn],
-    };
-    let bytes = serialize(&coords).unwrap();
-    let recovered = deserialize(&bytes).unwrap();
-    assert_eq!(recovered.num_atoms, 1);
-    assert!((recovered.atoms[0].x - 42.0).abs() < 1e-6);
-    assert_eq!(recovered.elements[0], Element::Zn);
-}
-
-// -- Error cases --
-
-#[test]
-fn test_deserialize_empty_bytes() {
-    assert!(deserialize(&[]).is_err());
-}
-
-#[test]
-fn test_deserialize_wrong_magic() {
-    assert!(deserialize(b"BADMAGIC\x00\x00\x00\x01").is_err());
-}
-
-#[test]
-fn test_deserialize_truncated_data() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"COORDS01");
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    assert!(deserialize(&bytes).is_err());
-}
+// -- ASSEM01 error cases --
 
 #[test]
 fn test_deserialize_assembly_empty_bytes() {

@@ -17,8 +17,7 @@ use codec::{decode_column, decode_msgpack, ColData, MsgVal};
 use crate::element::Element;
 use crate::entity::molecule::MoleculeEntity;
 use crate::ops::codec::{
-    merge_entities, split_into_entities, ChainIdMapper, Coords, CoordsAtom,
-    CoordsError,
+    split_into_entities, AdapterError, ChainIdMapper, Coords, CoordsAtom,
 };
 
 // ---------------------------------------------------------------------------
@@ -29,11 +28,11 @@ use crate::ops::codec::{
 ///
 /// # Errors
 ///
-/// Returns `CoordsError::InvalidFormat` if the bytes cannot be parsed as
+/// Returns `AdapterError::InvalidFormat` if the bytes cannot be parsed as
 /// valid BinaryCIF.
 pub fn bcif_to_entities(
     bytes: &[u8],
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     let coords = parse_bcif_to_coords(bytes)?;
     Ok(split_into_entities(&coords))
 }
@@ -42,53 +41,27 @@ pub fn bcif_to_entities(
 ///
 /// # Errors
 ///
-/// Returns `CoordsError::InvalidFormat` if the file cannot be read or parsed
+/// Returns `AdapterError::InvalidFormat` if the file cannot be read or parsed
 /// as valid BinaryCIF.
 pub fn bcif_file_to_entities(
     path: &Path,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     let bytes = std::fs::read(path).map_err(|e| {
-        CoordsError::InvalidFormat(format!("Failed to read file: {e}"))
+        AdapterError::InvalidFormat(format!("Failed to read file: {e}"))
     })?;
     bcif_to_entities(&bytes)
-}
-
-// ---------------------------------------------------------------------------
-// Coords/serialization API (derived from entities)
-// ---------------------------------------------------------------------------
-
-/// Load a BinaryCIF file and convert to Coords.
-///
-/// # Errors
-///
-/// Returns `CoordsError::InvalidFormat` if the file cannot be read,
-/// decompressed, or parsed as valid BinaryCIF.
-pub fn bcif_file_to_coords(path: &Path) -> Result<Coords, CoordsError> {
-    let entities = bcif_file_to_entities(path)?;
-    Ok(merge_entities(&entities))
-}
-
-/// Decode BinaryCIF bytes (possibly gzipped) into a Coords struct.
-///
-/// # Errors
-///
-/// Returns `CoordsError::InvalidFormat` if the bytes cannot be decompressed
-/// or parsed as valid BinaryCIF.
-pub fn bcif_to_coords(bytes: &[u8]) -> Result<Coords, CoordsError> {
-    let entities = bcif_to_entities(bytes)?;
-    Ok(merge_entities(&entities))
 }
 
 // ---------------------------------------------------------------------------
 // Internal parsing
 // ---------------------------------------------------------------------------
 
-fn decompress_if_gzip(bytes: &[u8]) -> Result<Vec<u8>, CoordsError> {
+fn decompress_if_gzip(bytes: &[u8]) -> Result<Vec<u8>, AdapterError> {
     if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
         let mut decoder = flate2::read::GzDecoder::new(bytes);
         let mut out = Vec::new();
         let _bytes_read = decoder.read_to_end(&mut out).map_err(|e| {
-            CoordsError::InvalidFormat(format!(
+            AdapterError::InvalidFormat(format!(
                 "Gzip decompression failed: {e}"
             ))
         })?;
@@ -104,7 +77,7 @@ fn decompress_if_gzip(bytes: &[u8]) -> Result<Vec<u8>, CoordsError> {
     reason = "coordinate extraction from BinaryCIF requires processing many \
               columns"
 )]
-fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
+fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, AdapterError> {
     let data = decompress_if_gzip(raw_bytes)?;
     let root = decode_msgpack(&data)?;
 
@@ -112,11 +85,11 @@ fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
         .get("dataBlocks")
         .and_then(MsgVal::as_array)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat("Missing 'dataBlocks'".into())
+            AdapterError::InvalidFormat("Missing 'dataBlocks'".into())
         })?;
 
     if data_blocks.is_empty() {
-        return Err(CoordsError::InvalidFormat("No data blocks found".into()));
+        return Err(AdapterError::InvalidFormat("No data blocks found".into()));
     }
 
     let block = &data_blocks[0];
@@ -124,7 +97,7 @@ fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
         .get("categories")
         .and_then(MsgVal::as_array)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat(
+            AdapterError::InvalidFormat(
                 "Missing 'categories' in data block".into(),
             )
         })?;
@@ -135,7 +108,7 @@ fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
             cat.get("name").and_then(MsgVal::as_str) == Some("_atom_site")
         })
         .ok_or_else(|| {
-            CoordsError::InvalidFormat("No '_atom_site' category found".into())
+            AdapterError::InvalidFormat("No '_atom_site' category found".into())
         })?;
 
     #[allow(
@@ -147,14 +120,14 @@ fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
         .get("rowCount")
         .and_then(MsgVal::as_i64)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat("Missing 'rowCount'".into())
+            AdapterError::InvalidFormat("Missing 'rowCount'".into())
         })? as usize;
 
     let columns = atom_site
         .get("columns")
         .and_then(MsgVal::as_array)
         .ok_or_else(|| {
-            CoordsError::InvalidFormat("Missing 'columns'".into())
+            AdapterError::InvalidFormat("Missing 'columns'".into())
         })?;
 
     let col_map: HashMap<&str, &MsgVal> = columns
@@ -228,7 +201,7 @@ fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
     }
 
     if atoms.is_empty() {
-        return Err(CoordsError::InvalidFormat(
+        return Err(AdapterError::InvalidFormat(
             "No ATOM records found in BinaryCIF".into(),
         ));
     }
@@ -251,12 +224,12 @@ fn parse_bcif_to_coords(raw_bytes: &[u8]) -> Result<Coords, CoordsError> {
 fn get_col_data<'a>(
     col_map: &HashMap<&str, &'a MsgVal>,
     name: &str,
-) -> Result<&'a MsgVal, CoordsError> {
+) -> Result<&'a MsgVal, AdapterError> {
     let col = col_map.get(name).ok_or_else(|| {
-        CoordsError::InvalidFormat(format!("Missing column '{name}'"))
+        AdapterError::InvalidFormat(format!("Missing column '{name}'"))
     })?;
     col.get("data").ok_or_else(|| {
-        CoordsError::InvalidFormat(format!("Column '{name}' has no data"))
+        AdapterError::InvalidFormat(format!("Column '{name}' has no data"))
     })
 }
 
@@ -264,18 +237,18 @@ fn decode_float_col(
     col_map: &HashMap<&str, &MsgVal>,
     name: &str,
     expected: usize,
-) -> Result<Vec<f64>, CoordsError> {
+) -> Result<Vec<f64>, AdapterError> {
     let data = get_col_data(col_map, name)?;
     match decode_column(data)? {
         ColData::FloatArray(v) if v.len() == expected => Ok(v),
-        ColData::FloatArray(v) => Err(CoordsError::InvalidFormat(format!(
+        ColData::FloatArray(v) => Err(AdapterError::InvalidFormat(format!(
             "Column '{name}': expected {expected} rows, got {}",
             v.len()
         ))),
         ColData::IntArray(v) if v.len() == expected => {
             Ok(v.iter().map(|&x| f64::from(x)).collect())
         }
-        _ => Err(CoordsError::InvalidFormat(format!(
+        _ => Err(AdapterError::InvalidFormat(format!(
             "Column '{name}': expected float array"
         ))),
     }
@@ -295,15 +268,15 @@ fn decode_int_col(
     col_map: &HashMap<&str, &MsgVal>,
     name: &str,
     expected: usize,
-) -> Result<Vec<i32>, CoordsError> {
+) -> Result<Vec<i32>, AdapterError> {
     let data = get_col_data(col_map, name)?;
     match decode_column(data)? {
         ColData::IntArray(v) if v.len() == expected => Ok(v),
-        ColData::IntArray(v) => Err(CoordsError::InvalidFormat(format!(
+        ColData::IntArray(v) => Err(AdapterError::InvalidFormat(format!(
             "Column '{name}': expected {expected} rows, got {}",
             v.len()
         ))),
-        _ => Err(CoordsError::InvalidFormat(format!(
+        _ => Err(AdapterError::InvalidFormat(format!(
             "Column '{name}': expected int array"
         ))),
     }
@@ -313,15 +286,15 @@ fn decode_string_col(
     col_map: &HashMap<&str, &MsgVal>,
     name: &str,
     expected: usize,
-) -> Result<Vec<String>, CoordsError> {
+) -> Result<Vec<String>, AdapterError> {
     let data = get_col_data(col_map, name)?;
     match decode_column(data)? {
         ColData::StringArray(v) if v.len() == expected => Ok(v),
-        ColData::StringArray(v) => Err(CoordsError::InvalidFormat(format!(
+        ColData::StringArray(v) => Err(AdapterError::InvalidFormat(format!(
             "Column '{name}': expected {expected} rows, got {}",
             v.len()
         ))),
-        _ => Err(CoordsError::InvalidFormat(format!(
+        _ => Err(AdapterError::InvalidFormat(format!(
             "Column '{name}': expected string array"
         ))),
     }

@@ -8,11 +8,11 @@ use pdbtbx::{
     ContainsAtomConformerResidueChain, ReadOptions, StrictnessLevel,
 };
 
+use crate::assembly::Assembly;
+use crate::entity::molecule::atom::Atom;
+use crate::entity::molecule::polymer::Residue;
 use crate::entity::molecule::MoleculeEntity;
-use crate::ops::codec::{
-    deserialize, merge_entities, serialize, split_into_entities, Coords,
-    CoordsError,
-};
+use crate::ops::codec::{split_into_entities, AdapterError, Coords};
 
 // ---------------------------------------------------------------------------
 // Entity-first API (primary)
@@ -22,10 +22,10 @@ use crate::ops::codec::{
 ///
 /// # Errors
 ///
-/// Returns [`CoordsError`] if parsing fails.
+/// Returns [`AdapterError`] if parsing fails.
 pub fn pdb_str_to_entities(
     pdb_str: &str,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     parse_pdb_to_entities(pdb_str)
 }
 
@@ -36,12 +36,12 @@ pub fn pdb_str_to_entities(
 ///
 /// # Errors
 ///
-/// Returns [`CoordsError`] if the file cannot be read or parsing fails.
+/// Returns [`AdapterError`] if the file cannot be read or parsing fails.
 pub fn pdb_file_to_entities(
     path: &std::path::Path,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
-        CoordsError::PdbParseError(format!("Failed to read file: {e}"))
+        AdapterError::PdbParseError(format!("Failed to read file: {e}"))
     })?;
     let sanitized = sanitize_pdb(&content);
     parse_pdb_to_entities(&sanitized)
@@ -51,10 +51,10 @@ pub fn pdb_file_to_entities(
 ///
 /// # Errors
 ///
-/// Returns [`CoordsError`] if the file cannot be read or parsing fails.
+/// Returns [`AdapterError`] if the file cannot be read or parsing fails.
 pub fn structure_file_to_entities(
     path: &std::path::Path,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -67,93 +67,147 @@ pub fn structure_file_to_entities(
 }
 
 // ---------------------------------------------------------------------------
-// Coords/serialization API (derived from entities)
+// PDB writers
 // ---------------------------------------------------------------------------
 
-/// Parse PDB format string to COORDS binary format.
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if parsing or serialization fails.
-pub fn pdb_to_coords(pdb_str: &str) -> Result<Vec<u8>, CoordsError> {
-    let entities = parse_pdb_to_entities(pdb_str)?;
-    serialize(&merge_entities(&entities))
+/// Emit an `Assembly` as a PDB-format string. All entities are flattened
+/// into a single atom stream in declaration order.
+#[must_use]
+pub fn assembly_to_pdb(assembly: &Assembly) -> String {
+    entities_to_pdb(assembly.entities())
 }
 
-/// Parse PDB format string directly to Coords struct.
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if parsing fails.
-pub fn pdb_str_to_coords(pdb_str: &str) -> Result<Coords, CoordsError> {
-    let entities = parse_pdb_to_entities(pdb_str)?;
-    Ok(merge_entities(&entities))
-}
-
-/// Load PDB file directly to Coords struct.
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if the file cannot be read or parsing fails.
-pub fn pdb_file_to_coords(
-    path: &std::path::Path,
-) -> Result<Coords, CoordsError> {
-    let entities = pdb_file_to_entities(path)?;
-    Ok(merge_entities(&entities))
-}
-
-/// Load a structure file (PDB or mmCIF) by detecting format from extension.
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if the file cannot be read or parsing fails.
-pub fn structure_file_to_coords(
-    path: &std::path::Path,
-) -> Result<Coords, CoordsError> {
-    let entities = structure_file_to_entities(path)?;
-    Ok(merge_entities(&entities))
-}
-
-/// Convert COORDS binary to PDB format string.
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if deserialization fails.
-pub fn coords_to_pdb(coords_bytes: &[u8]) -> Result<String, CoordsError> {
-    let coords = deserialize(coords_bytes)?;
-
-    let mut pdb_string = String::new();
-
-    for i in 0..coords.num_atoms {
-        let atom = &coords.atoms[i];
-        let chain_id = coords.chain_ids[i] as char;
-        let res_num = coords.res_nums[i];
-
-        let atom_name =
-            std::str::from_utf8(&coords.atom_names[i]).unwrap_or("X   ");
-        let res_name =
-            std::str::from_utf8(&coords.res_names[i]).unwrap_or("UNK");
-
-        let _ = writeln!(
-            pdb_string,
-            "ATOM  {:>5} {:<4} {:>3} {}{:>4}    \
-             {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}",
-            i + 1,
-            atom_name,
-            res_name,
-            chain_id,
-            res_num,
-            atom.x,
-            atom.y,
-            atom.z,
-            atom.occupancy,
-            atom.b_factor
-        );
+/// Emit an entity slice as a PDB-format string.
+#[must_use]
+pub fn entities_to_pdb<E: std::borrow::Borrow<MoleculeEntity>>(
+    entities: &[E],
+) -> String {
+    let mut pdb = String::new();
+    let mut serial: usize = 0;
+    for entity in entities {
+        write_entity_atoms(entity.borrow(), &mut serial, &mut pdb);
     }
+    pdb.push_str("END\n");
+    pdb
+}
 
-    pdb_string.push_str("END\n");
+fn write_entity_atoms(
+    entity: &MoleculeEntity,
+    serial: &mut usize,
+    out: &mut String,
+) {
+    match entity {
+        MoleculeEntity::Protein(e) => {
+            write_polymer_atoms(
+                &e.atoms,
+                &e.residues,
+                e.pdb_chain_id,
+                serial,
+                out,
+            );
+        }
+        MoleculeEntity::NucleicAcid(e) => {
+            write_polymer_atoms(
+                &e.atoms,
+                &e.residues,
+                e.pdb_chain_id,
+                serial,
+                out,
+            );
+        }
+        MoleculeEntity::SmallMolecule(e) => {
+            for atom in &e.atoms {
+                *serial += 1;
+                write_atom_line(
+                    *serial,
+                    atom,
+                    ResidueCtx {
+                        chain_id: b' ',
+                        res_name: e.residue_name,
+                        res_num: 1,
+                    },
+                    out,
+                );
+            }
+        }
+        MoleculeEntity::Bulk(e) =>
+        {
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_possible_wrap,
+                reason = "atom count fits in i32 for valid structures"
+            )]
+            for (i, atom) in e.atoms.iter().enumerate() {
+                *serial += 1;
+                write_atom_line(
+                    *serial,
+                    atom,
+                    ResidueCtx {
+                        chain_id: b' ',
+                        res_name: e.residue_name,
+                        res_num: (i as i32) + 1,
+                    },
+                    out,
+                );
+            }
+        }
+    }
+}
 
-    Ok(pdb_string)
+fn write_polymer_atoms(
+    atoms: &[Atom],
+    residues: &[Residue],
+    chain_id: u8,
+    serial: &mut usize,
+    out: &mut String,
+) {
+    for residue in residues {
+        for idx in residue.atom_range.clone() {
+            *serial += 1;
+            write_atom_line(
+                *serial,
+                &atoms[idx],
+                ResidueCtx {
+                    chain_id,
+                    res_name: residue.name,
+                    res_num: residue.number,
+                },
+                out,
+            );
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct ResidueCtx {
+    chain_id: u8,
+    res_name: [u8; 3],
+    res_num: i32,
+}
+
+fn write_atom_line(
+    serial: usize,
+    atom: &Atom,
+    ctx: ResidueCtx,
+    out: &mut String,
+) {
+    let atom_name = std::str::from_utf8(&atom.name).unwrap_or("X   ");
+    let res_name_str = std::str::from_utf8(&ctx.res_name).unwrap_or("UNK");
+    let _ = writeln!(
+        out,
+        "ATOM  {:>5} {:<4} {:>3} {}{:>4}    \
+         {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}",
+        serial,
+        atom_name,
+        res_name_str,
+        ctx.chain_id as char,
+        ctx.res_num,
+        atom.position.x,
+        atom.position.y,
+        atom.position.z,
+        atom.occupancy,
+        atom.b_factor,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -186,13 +240,13 @@ fn sanitize_pdb(content: &str) -> String {
 /// Parse PDB string into entities via temporary Coords + split.
 fn parse_pdb_to_entities(
     input: &str,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     let coords = parse_pdb_to_coords(input)?;
     Ok(split_into_entities(&coords))
 }
 
 /// Parse PDB string into flat Coords (internal, used by entity pipeline).
-fn parse_pdb_to_coords(input: &str) -> Result<Coords, CoordsError> {
+fn parse_pdb_to_coords(input: &str) -> Result<Coords, AdapterError> {
     use crate::element::Element;
     use crate::ops::codec::{ChainIdMapper, CoordsAtom};
 
@@ -203,7 +257,7 @@ fn parse_pdb_to_coords(input: &str) -> Result<Coords, CoordsError> {
         .set_level(StrictnessLevel::Loose)
         .read_raw(reader)
         .map_err(|errs| {
-            CoordsError::PdbParseError(
+            AdapterError::PdbParseError(
                 errs.iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
@@ -247,7 +301,7 @@ fn parse_pdb_to_coords(input: &str) -> Result<Coords, CoordsError> {
     }
 
     if atoms.is_empty() {
-        return Err(CoordsError::PdbParseError(
+        return Err(AdapterError::PdbParseError(
             "No atoms found in structure".to_owned(),
         ));
     }
@@ -346,11 +400,9 @@ END
     }
 
     #[test]
-    fn coords_to_pdb_produces_valid_output() {
+    fn entities_to_pdb_produces_valid_output() {
         let entities = pdb_str_to_entities(MINIMAL_PDB).unwrap();
-        let merged = merge_entities(&entities);
-        let bytes = serialize(&merged).unwrap();
-        let pdb_output = coords_to_pdb(&bytes).unwrap();
+        let pdb_output = entities_to_pdb(&entities);
 
         assert!(pdb_output.contains("ATOM"));
         assert!(pdb_output.contains("ALA"));
@@ -362,11 +414,9 @@ END
     }
 
     #[test]
-    fn coords_to_pdb_preserves_coordinates_in_output() {
+    fn entities_to_pdb_preserves_coordinates_in_output() {
         let entities = pdb_str_to_entities(MINIMAL_PDB).unwrap();
-        let merged = merge_entities(&entities);
-        let bytes = serialize(&merged).unwrap();
-        let pdb_output = coords_to_pdb(&bytes).unwrap();
+        let pdb_output = entities_to_pdb(&entities);
 
         // Verify coordinate values appear in the output
         assert!(pdb_output.contains("1.000"));

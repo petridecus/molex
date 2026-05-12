@@ -80,7 +80,7 @@ impl SmallMoleculeEntity {
         clippy::cast_possible_truncation,
         reason = "atom indices bounded by small-molecule atom count"
     )]
-    pub fn from_coords_indices(
+    pub(crate) fn from_coords_indices(
         id: EntityId,
         mol_type: MoleculeType,
         indices: &[usize],

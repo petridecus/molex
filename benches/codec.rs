@@ -1,4 +1,4 @@
-//! Benchmarks for serialization/deserialization (COORDS01, ASSEM01).
+//! Benchmarks for the ASSEM01 wire format round-trip.
 #![allow(
     missing_docs,
     unused_results,
@@ -6,84 +6,56 @@
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::cast_possible_wrap,
+    clippy::suboptimal_flops,
+    clippy::format_push_string,
+    clippy::uninlined_format_args,
     unused_variables
 )]
 
 use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
 };
-use molex::element::Element;
-use molex::ops::codec::{
-    deserialize, deserialize_assembly, merge_entities, serialize,
-    serialize_assembly, split_into_entities, Coords, CoordsAtom,
-};
+use molex::adapters::pdb::pdb_str_to_entities;
+use molex::ops::wire::{deserialize_assembly, serialize_assembly};
 use molex::Assembly;
 
-/// Build a synthetic Coords with `n` atoms across `n/5` ALA residues.
-fn make_coords(n_atoms: usize) -> Coords {
-    let n_residues = (n_atoms / 5).max(1);
-    let atom_names_cycle: &[[u8; 4]] =
-        &[*b"N   ", *b"CA  ", *b"C   ", *b"O   ", *b"CB  "];
-
-    Coords {
-        num_atoms: n_atoms,
-        atoms: (0..n_atoms)
-            .map(|i| CoordsAtom {
-                x: (i as f32) * 1.5,
-                y: 0.0,
-                z: 0.0,
-                occupancy: 1.0,
-                b_factor: 0.0,
-            })
-            .collect(),
-        chain_ids: vec![b'A'; n_atoms],
-        res_names: (0..n_atoms).map(|_| *b"ALA").collect(),
-        res_nums: (0..n_atoms).map(|i| (i / 5 + 1) as i32).collect(),
-        atom_names: (0..n_atoms).map(|i| atom_names_cycle[i % 5]).collect(),
-        elements: (0..n_atoms)
-            .map(|i| match i % 5 {
-                0 => Element::N,
-                1 | 2 | 4 => Element::C,
-                3 => Element::O,
-                _ => Element::Unknown,
-            })
-            .collect(),
+/// Build a synthetic PDB string with `n_residues` ALA residues (5 atoms each).
+fn generate_pdb(n_residues: usize) -> String {
+    let mut pdb = String::new();
+    let mut serial = 1usize;
+    for res_num in 1..=n_residues {
+        for &(name, dx, dy, dz, elem) in &[
+            ("N  ", 0.0f64, 0.0, 0.0, "N"),
+            ("CA ", 1.47, 0.0, 0.0, "C"),
+            ("C  ", 2.45, 1.0, 0.0, "C"),
+            ("O  ", 2.45, 2.2, 0.0, "O"),
+            ("CB ", 1.47, -1.5, 0.0, "C"),
+        ] {
+            let x = dx + (res_num as f64) * 3.8;
+            pdb.push_str(&format!(
+                "ATOM  {:>5} {:<4}ALA A{:>4}    {:>8.3}{:>8.3}{:>8.3}  1.00  \
+                 0.00          {:>2}  \n",
+                serial, name, res_num, x, dy, dz, elem
+            ));
+            serial += 1;
+        }
     }
+    pdb.push_str("END\n");
+    pdb
 }
 
-fn bench_coords_roundtrip(c: &mut Criterion) {
-    let mut group = c.benchmark_group("coords_roundtrip");
-
-    for n_atoms in [50, 500, 5000, 50_000] {
-        let coords = make_coords(n_atoms);
-        let bytes = serialize(&coords).unwrap();
-
-        group.bench_with_input(
-            BenchmarkId::new("serialize", format!("{n_atoms}_atoms")),
-            &coords,
-            |b, coords| {
-                b.iter(|| serialize(black_box(coords)).unwrap());
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("deserialize", format!("{n_atoms}_atoms")),
-            &bytes,
-            |b, bytes| {
-                b.iter(|| deserialize(black_box(bytes)).unwrap());
-            },
-        );
-    }
-
-    group.finish();
+fn build_assembly(n_atoms: usize) -> Assembly {
+    let n_residues = (n_atoms / 5).max(1);
+    let pdb = generate_pdb(n_residues);
+    let entities = pdb_str_to_entities(&pdb).unwrap();
+    Assembly::new(entities)
 }
 
 fn bench_assembly_roundtrip(c: &mut Criterion) {
     let mut group = c.benchmark_group("assembly_roundtrip");
 
     for n_atoms in [50, 500, 5000] {
-        let coords = make_coords(n_atoms);
-        let assembly = Assembly::new(split_into_entities(&coords));
+        let assembly = build_assembly(n_atoms);
         let bytes = serialize_assembly(&assembly).unwrap();
 
         group.bench_with_input(
@@ -106,29 +78,5 @@ fn bench_assembly_roundtrip(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_merge_entities(c: &mut Criterion) {
-    let mut group = c.benchmark_group("merge_entities");
-
-    for n_atoms in [50, 500, 5000] {
-        let coords = make_coords(n_atoms);
-        let entities = split_into_entities(&coords);
-
-        group.bench_with_input(
-            BenchmarkId::new("merge", format!("{n_atoms}_atoms")),
-            &entities,
-            |b, entities| {
-                b.iter(|| merge_entities(black_box(entities)));
-            },
-        );
-    }
-
-    group.finish();
-}
-
-criterion_group!(
-    benches,
-    bench_coords_roundtrip,
-    bench_assembly_roundtrip,
-    bench_merge_entities
-);
+criterion_group!(benches, bench_assembly_roundtrip);
 criterion_main!(benches);

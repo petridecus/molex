@@ -18,9 +18,7 @@ pub use extract::{
 pub use parse::{parse, CifParseError};
 
 use crate::entity::molecule::MoleculeEntity;
-use crate::ops::codec::{
-    merge_entities, serialize, split_into_entities, Coords, CoordsError,
-};
+use crate::ops::codec::{split_into_entities, AdapterError, Coords};
 
 // ---------------------------------------------------------------------------
 // Entity-first API (primary)
@@ -30,10 +28,10 @@ use crate::ops::codec::{
 ///
 /// # Errors
 ///
-/// Returns [`CoordsError`] if parsing fails.
+/// Returns [`AdapterError`] if parsing fails.
 pub fn mmcif_str_to_entities(
     cif_str: &str,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     parse_mmcif_to_entities(cif_str)
 }
 
@@ -41,48 +39,14 @@ pub fn mmcif_str_to_entities(
 ///
 /// # Errors
 ///
-/// Returns [`CoordsError`] if the file cannot be read or parsing fails.
+/// Returns [`AdapterError`] if the file cannot be read or parsing fails.
 pub fn mmcif_file_to_entities(
     path: &Path,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
-        CoordsError::InvalidFormat(format!("Failed to read file: {e}"))
+        AdapterError::InvalidFormat(format!("Failed to read file: {e}"))
     })?;
     parse_mmcif_to_entities(&content)
-}
-
-// ---------------------------------------------------------------------------
-// Coords/serialization API (derived from entities)
-// ---------------------------------------------------------------------------
-
-/// Parse mmCIF format string to COORDS binary format.
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if parsing or serialization fails.
-pub fn mmcif_to_coords(cif_str: &str) -> Result<Vec<u8>, CoordsError> {
-    let entities = parse_mmcif_to_entities(cif_str)?;
-    serialize(&merge_entities(&entities))
-}
-
-/// Parse mmCIF format string directly to [`Coords`].
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if parsing fails.
-pub fn mmcif_str_to_coords(cif_str: &str) -> Result<Coords, CoordsError> {
-    let entities = parse_mmcif_to_entities(cif_str)?;
-    Ok(merge_entities(&entities))
-}
-
-/// Load mmCIF file directly to [`Coords`].
-///
-/// # Errors
-///
-/// Returns [`CoordsError`] if the file cannot be read or parsing fails.
-pub fn mmcif_file_to_coords(path: &Path) -> Result<Coords, CoordsError> {
-    let entities = mmcif_file_to_entities(path)?;
-    Ok(merge_entities(&entities))
 }
 
 // ---------------------------------------------------------------------------
@@ -92,14 +56,14 @@ pub fn mmcif_file_to_coords(path: &Path) -> Result<Coords, CoordsError> {
 /// Parse mmCIF string into entities via temporary Coords + split.
 fn parse_mmcif_to_entities(
     input: &str,
-) -> Result<Vec<MoleculeEntity>, CoordsError> {
+) -> Result<Vec<MoleculeEntity>, AdapterError> {
     let coords = parse_mmcif_to_coords(input)?;
     Ok(split_into_entities(&coords))
 }
 
 /// Parse mmCIF string into flat Coords (internal).
 /// Tries the fast path (direct to Coords, no DOM) first, falls back to DOM.
-fn parse_mmcif_to_coords(input: &str) -> Result<Coords, CoordsError> {
+fn parse_mmcif_to_coords(input: &str) -> Result<Coords, AdapterError> {
     if let Some(result) = fast::parse_mmcif_fast(input) {
         return result;
     }
@@ -107,22 +71,24 @@ fn parse_mmcif_to_coords(input: &str) -> Result<Coords, CoordsError> {
 }
 
 /// DOM-based mmCIF parsing fallback.
-fn parse_mmcif_to_coords_dom(input: &str) -> Result<Coords, CoordsError> {
+fn parse_mmcif_to_coords_dom(input: &str) -> Result<Coords, AdapterError> {
     use crate::element::Element;
     use crate::ops::codec::{ChainIdMapper, CoordsAtom};
 
     let doc = parse(input).map_err(|e| {
-        CoordsError::InvalidFormat(format!("CIF parse error: {e}"))
+        AdapterError::InvalidFormat(format!("CIF parse error: {e}"))
     })?;
     let block = doc.blocks.first().ok_or_else(|| {
-        CoordsError::InvalidFormat("No data blocks in CIF".into())
+        AdapterError::InvalidFormat("No data blocks in CIF".into())
     })?;
     let data = CoordinateData::try_from(block).map_err(|e| {
-        CoordsError::InvalidFormat(format!("CIF extraction error: {e}"))
+        AdapterError::InvalidFormat(format!("CIF extraction error: {e}"))
     })?;
 
     if data.atoms.is_empty() {
-        return Err(CoordsError::InvalidFormat("No atoms found in CIF".into()));
+        return Err(AdapterError::InvalidFormat(
+            "No atoms found in CIF".into(),
+        ));
     }
 
     let n = data.atoms.len();

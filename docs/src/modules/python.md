@@ -9,24 +9,25 @@ cd crates/molex
 maturin develop --release --features python
 ```
 
-## Core COORDS functions (`python.rs`)
+## ASSEM01-based IO helpers (`python.rs`)
 
-These operate on serialized COORDS bytes:
+These operate on serialized ASSEM01 bytes (entity-aware binary
+format). They replaced the retired COORDS01 helpers.
 
 ```python
 import molex
 
-# Parse PDB string to COORDS bytes
-coords_bytes = molex.pdb_to_coords(pdb_string)
+# Parse PDB string to ASSEM01 bytes
+assembly_bytes = molex.pdb_to_assembly_bytes(pdb_string)
 
-# Parse mmCIF string to COORDS bytes
-coords_bytes = molex.mmcif_to_coords(cif_string)
+# Parse mmCIF string to ASSEM01 bytes
+assembly_bytes = molex.mmcif_to_assembly_bytes(cif_string)
 
-# Convert COORDS bytes to PDB string
-pdb_string = molex.coords_to_pdb(coords_bytes)
+# Convert ASSEM01 bytes to PDB string
+pdb_string = molex.assembly_bytes_to_pdb(assembly_bytes)
 
 # Round-trip validation
-validated = molex.deserialize_coords_py(coords_bytes)
+validated = molex.deserialize_assembly_bytes(assembly_bytes)
 ```
 
 ## AtomWorks interop (`adapters::atomworks`)
@@ -47,6 +48,10 @@ atom_array = molex.entities_to_atom_array_plus(assembly_bytes)
 # Convert with AtomWorks cleaning pipeline (leaving group removal,
 # charge correction, missing atom imputation)
 atom_array = molex.entities_to_atom_array_parsed(assembly_bytes, "3nez.cif.gz")
+
+# Decode ASSEM01 bytes directly into an AtomArray
+atom_array = molex.assembly_bytes_to_atom_array(assembly_bytes)
+atom_array = molex.assembly_bytes_to_atom_array_plus(assembly_bytes)
 ```
 
 ### AtomWorks -> molex
@@ -66,14 +71,20 @@ assembly_bytes = molex.parse_file_to_entities("3nez.cif.gz")
 atom_array = molex.parse_file_full("3nez.cif.gz")
 ```
 
-### Flat Coords functions
+## Retired bindings
 
-Flat Coords-based conversions are available for working with the COORDS01 format directly:
+The following bindings existed historically but were removed when the
+COORDS01 wire format was retired. Migration targets are listed for any
+remaining callers:
 
-```python
-atom_array = molex.coords_to_atom_array(coords_bytes)
-atom_array = molex.coords_to_atom_array_plus(coords_bytes)
-assembly_bytes = molex.atom_array_to_coords(atom_array)
-```
+| Removed                       | Replacement                                |
+| ----------------------------- | ------------------------------------------ |
+| `pdb_to_coords`               | `pdb_to_assembly_bytes`                    |
+| `mmcif_to_coords`             | `mmcif_to_assembly_bytes`                  |
+| `coords_to_pdb`               | `assembly_bytes_to_pdb`                    |
+| `deserialize_coords_py`       | `deserialize_assembly_bytes`               |
+| `coords_to_atom_array`        | `assembly_bytes_to_atom_array`             |
+| `coords_to_atom_array_plus`   | `assembly_bytes_to_atom_array_plus`        |
+| `atom_array_to_coords`        | `atom_array_to_entities`                   |
 
-These operate on the flat COORDS01 format and do not include entity metadata.
+See `docs/COORDS_RETIREMENT_PLAN.md` for full context.

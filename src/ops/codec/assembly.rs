@@ -1,34 +1,12 @@
-//! Assembly helpers: convenience functions for working with
-//! `Vec<MoleculeEntity>`.
+//! Entity-utility helpers (CA positions, residue count) and the
+//! `update_protein_entities` live-position-update wire (Coords-shaped,
+//! transitional — see Phase 4a in `docs/COORDS_RETIREMENT_PLAN.md`).
 
 use glam::Vec3;
 
-use super::serialize::serialize_entities;
-use super::{merge_entities, split_into_entities, Coords, CoordsError};
+use super::{split_into_entities, Coords};
 use crate::entity::molecule::id::EntityIdAllocator;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
-
-/// Protein-only Coords derived from entities (for serialization).
-#[must_use]
-pub fn protein_coords(entities: &[MoleculeEntity]) -> Coords {
-    let proteins: Vec<MoleculeEntity> = entities
-        .iter()
-        .filter(|e| e.molecule_type() == MoleculeType::Protein)
-        .cloned()
-        .collect();
-    merge_entities(&proteins)
-}
-
-/// ASSEM01-encode a raw entity slice (includes molecule type metadata).
-///
-/// # Errors
-///
-/// Returns `CoordsError` if serialization fails.
-pub fn assembly_bytes(
-    entities: &[MoleculeEntity],
-) -> Result<Vec<u8>, CoordsError> {
-    serialize_entities(entities)
-}
 
 /// CA positions from protein entities.
 #[must_use]
@@ -53,7 +31,12 @@ pub fn residue_count(entities: &[MoleculeEntity]) -> usize {
 /// Replace protein entity coords (keeps non-protein entities).
 /// Splits the incoming combined protein coords by chain ID so each
 /// entity only receives its own chain's atoms, avoiding duplication.
-pub fn update_protein_entities(
+#[allow(
+    dead_code,
+    reason = "test-only caller post-Phase 4a viso migration; function \
+              retained pending Phase 3/6 cleanup"
+)]
+pub(crate) fn update_protein_entities(
     entities: &mut Vec<MoleculeEntity>,
     protein: &Coords,
 ) {

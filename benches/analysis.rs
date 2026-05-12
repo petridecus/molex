@@ -5,7 +5,10 @@
     clippy::unwrap_used,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::cast_possible_wrap
+    clippy::cast_possible_wrap,
+    clippy::suboptimal_flops,
+    clippy::format_push_string,
+    clippy::uninlined_format_args
 )]
 
 use criterion::{
@@ -49,34 +52,32 @@ fn bench_kabsch_alignment(c: &mut Criterion) {
 }
 
 fn bench_ca_extraction(c: &mut Criterion) {
-    use molex::element::Element;
-    use molex::ops::codec::{split_into_entities, Coords, CoordsAtom};
+    use molex::adapters::pdb::pdb_str_to_entities;
 
     let mut group = c.benchmark_group("ca_extraction");
 
-    for n_residues in [50, 200, 1000] {
-        let n_atoms = n_residues * 5;
-        let atom_names_cycle: &[[u8; 4]] =
-            &[*b"N   ", *b"CA  ", *b"C   ", *b"O   ", *b"CB  "];
-
-        let coords = Coords {
-            num_atoms: n_atoms,
-            atoms: (0..n_atoms)
-                .map(|i| CoordsAtom {
-                    x: (i as f32) * 1.5,
-                    y: 0.0,
-                    z: 0.0,
-                    occupancy: 1.0,
-                    b_factor: 0.0,
-                })
-                .collect(),
-            chain_ids: vec![b'A'; n_atoms],
-            res_names: vec![*b"ALA"; n_atoms],
-            res_nums: (0..n_atoms).map(|i| (i / 5 + 1) as i32).collect(),
-            atom_names: (0..n_atoms).map(|i| atom_names_cycle[i % 5]).collect(),
-            elements: vec![Element::N; n_atoms],
-        };
-        let entities = split_into_entities(&coords);
+    for n_residues in [50usize, 200, 1000] {
+        let mut pdb = String::new();
+        let mut serial = 1usize;
+        for res_num in 1..=n_residues {
+            for &(name, dx, dy, dz, elem) in &[
+                ("N  ", 0.0f64, 0.0, 0.0, "N"),
+                ("CA ", 1.47, 0.0, 0.0, "C"),
+                ("C  ", 2.45, 1.0, 0.0, "C"),
+                ("O  ", 2.45, 2.2, 0.0, "O"),
+                ("CB ", 1.47, -1.5, 0.0, "C"),
+            ] {
+                let x = dx + (res_num as f64) * 3.8;
+                pdb.push_str(&format!(
+                    "ATOM  {:>5} {:<4}ALA A{:>4}    {:>8.3}{:>8.3}{:>8.3}  \
+                     1.00  0.00          {:>2}  \n",
+                    serial, name, res_num, x, dy, dz, elem
+                ));
+                serial += 1;
+            }
+        }
+        pdb.push_str("END\n");
+        let entities = pdb_str_to_entities(&pdb).unwrap();
 
         group.bench_with_input(
             BenchmarkId::new("extract_ca", format!("{n_residues}_residues")),

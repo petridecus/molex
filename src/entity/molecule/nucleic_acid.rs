@@ -15,7 +15,7 @@ use crate::bond::CovalentBond;
 use crate::chemistry::atom_name::AtomName;
 use crate::chemistry::nucleotides::Nucleotide;
 use crate::element::Element;
-use crate::ops::codec::Coords;
+use crate::ops::codec::{extract_atom_set_and_residues, Coords};
 
 /// Pre-extracted ring geometry for a single nucleotide base.
 #[derive(Debug, Clone)]
@@ -130,15 +130,14 @@ impl NAEntity {
 
     /// Construct from flat `Coords` atom indices during entity splitting.
     #[must_use]
-    pub fn from_coords_indices(
+    pub(crate) fn from_coords_indices(
         id: EntityId,
         na_type: MoleculeType,
         indices: &[usize],
         coords: &Coords,
         pdb_chain_id: u8,
     ) -> Self {
-        let (atoms, residues) =
-            super::extract_atom_set_and_residues(indices, coords);
+        let (atoms, residues) = extract_atom_set_and_residues(indices, coords);
         Self::new(id, na_type, atoms, residues, pdb_chain_id)
     }
 

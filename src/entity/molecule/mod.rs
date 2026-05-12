@@ -31,11 +31,6 @@ use self::protein::ProteinEntity;
 use self::small_molecule::SmallMoleculeEntity;
 use self::traits::Entity;
 use crate::analysis::aabb::Aabb;
-// Coords↔Entity bridge functions live in `ops::codec`.
-pub use crate::ops::codec::{
-    coords_to_molecule_entity, extract_atom_set_and_residues, extract_by_type,
-    merge_entities, split_into_entities,
-};
 use crate::ops::codec::{Coords, CoordsAtom};
 /// Classification of molecule types found in structural biology files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -190,7 +185,12 @@ impl MoleculeEntity {
 
     /// Convert to a flat `Coords` for serialization or interop.
     #[must_use]
-    pub fn to_coords(&self) -> Coords {
+    #[allow(
+        dead_code,
+        reason = "only called under feature = \"python\" (atomworks bridge) \
+                  and in tests; retained pending Phase 4b/6 cleanup"
+    )]
+    pub(crate) fn to_coords(&self) -> Coords {
         match self {
             MoleculeEntity::Protein(e) => {
                 polymer_entity_to_coords(&e.atoms, &e.residues, e.pdb_chain_id)
@@ -328,6 +328,7 @@ fn polymer_label(entity: &MoleculeEntity, type_name: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Convert polymer entity fields to flat `Coords`.
+#[allow(dead_code, reason = "helper for to_coords; same retention rationale")]
 fn polymer_entity_to_coords(
     atoms: &[Atom],
     residues: &[Residue],
@@ -363,6 +364,7 @@ fn polymer_entity_to_coords(
 }
 
 /// Convert a flat `Vec<Atom>` to `Coords` with uniform residue metadata.
+#[allow(dead_code, reason = "helper for to_coords; same retention rationale")]
 fn atoms_to_coords(
     atoms: &[Atom],
     residue_name: [u8; 3],

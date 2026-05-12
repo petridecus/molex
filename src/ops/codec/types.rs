@@ -1,14 +1,20 @@
-//! Wire format types: Coords, CoordsAtom, CoordsError, ChainIdMapper.
+//! Adapter/wire error type plus the crate-internal `Coords` parser
+//! intermediate (`Coords`, `CoordsAtom`, `ChainIdMapper`).
 
 use thiserror::Error;
 
 use crate::element::Element;
 
-/// Errors that can occur during COORDS operations.
+/// Errors returned by molex parsers, serializers, and structural transforms.
+///
+/// Used as the `Err` variant for the public adapter entry points
+/// (`pdb_str_to_entities`, `mmcif_str_to_entities`, `bcif_to_entities`),
+/// the ASSEM01 wire format (`serialize_assembly` / `deserialize_assembly`),
+/// and `ops::transform::alignment::align_to`.
 #[derive(Error, Debug)]
-pub enum CoordsError {
-    /// The binary data does not conform to the expected COORDS/ASSEM format.
-    #[error("Invalid COORDS format: {0}")]
+pub enum AdapterError {
+    /// The input bytes/text do not conform to the expected format.
+    #[error("Invalid format: {0}")]
     InvalidFormat(String),
     /// A PDB file could not be parsed.
     #[error("Failed to parse PDB: {0}")]
@@ -28,7 +34,7 @@ pub enum CoordsError {
 ///
 /// Assigns printable ASCII characters (A-Z, a-z, 0-9, then other printable
 /// chars) so that PDB export produces valid chain ID columns.
-pub struct ChainIdMapper {
+pub(crate) struct ChainIdMapper {
     map: std::collections::HashMap<String, u8>,
     next_idx: usize,
 }
@@ -74,7 +80,7 @@ impl ChainIdMapper {
 
 /// Single atom with coordinates and crystallographic factors.
 #[derive(Debug, Clone)]
-pub struct CoordsAtom {
+pub(crate) struct CoordsAtom {
     /// X coordinate in angstroms.
     pub x: f32,
     /// Y coordinate in angstroms.
@@ -89,7 +95,7 @@ pub struct CoordsAtom {
 
 /// Complete coordinate structure with atom metadata.
 #[derive(Debug, Clone)]
-pub struct Coords {
+pub(crate) struct Coords {
     /// Total number of atoms in this structure.
     pub num_atoms: usize,
     /// Per-atom position and crystallographic data.
