@@ -297,8 +297,9 @@ const uint8_t *molex_entity_residue_name_single(const molex_Entity *entity,
 ;
 
 /**
- * Number of equal-sized molecule chunks the atom set should be split
- * into for non-polymer entities. Returns 1 for `SmallMolecule`,
+ * Number of equal-sized molecule chunks the atom set should be split into.
+ *
+ * For non-polymer entities only: returns 1 for `SmallMolecule`,
  * `BulkEntity::molecule_count` for `Bulk`, and 0 for polymers or a null
  * `entity`.
  */
