@@ -299,6 +299,26 @@ class Entity {
         }};
   }
 
+  /// Single 3-byte residue name for non-polymer entities
+  /// (`SmallMolecule` / `Bulk`); empty string for polymers. Padded with
+  /// ASCII spaces; trim if needed.
+  std::string_view residue_name_single() const noexcept {
+    std::size_t len = 0;
+    const std::uint8_t* ptr =
+        ::molex_entity_residue_name_single(handle_, &len);
+    if (ptr == nullptr || len == 0) {
+      return std::string_view{};
+    }
+    return std::string_view{reinterpret_cast<const char*>(ptr), len};
+  }
+
+  /// Number of equal-sized molecule chunks the atom set should be split
+  /// into. 1 for `SmallMolecule`, `BulkEntity::molecule_count` for
+  /// `Bulk`, 0 for polymers.
+  std::size_t molecule_count() const noexcept {
+    return ::molex_entity_molecule_count(handle_);
+  }
+
  private:
   const ::molex_Entity* handle_;
 };
@@ -361,6 +381,34 @@ class Assembly {
   static std::optional<Assembly> from_bcif(
       const std::vector<std::uint8_t>& bytes) {
     return from_bcif(bytes.data(), bytes.size());
+  }
+
+  /// Decode ASSEM01 binary bytes. Returns an empty optional on failure.
+  static std::optional<Assembly> from_assem01(
+      const std::uint8_t* bytes, std::size_t len) {
+    ::molex_Assembly* h = ::molex_assem01_to_assembly(bytes, len);
+    if (h == nullptr) {
+      return std::nullopt;
+    }
+    return Assembly{h};
+  }
+
+  static std::optional<Assembly> from_assem01(
+      const std::vector<std::uint8_t>& bytes) {
+    return from_assem01(bytes.data(), bytes.size());
+  }
+
+  /// Emit this assembly as ASSEM01 binary bytes. Empty optional on
+  /// failure.
+  std::optional<std::vector<std::uint8_t>> to_assem01() const {
+    std::uint8_t* buf = nullptr;
+    std::size_t len = 0;
+    if (::molex_assembly_to_assem01(handle_, &buf, &len) != MOLEX_OK) {
+      return std::nullopt;
+    }
+    std::vector<std::uint8_t> out(buf, buf + len);
+    ::molex_free_bytes(buf, len);
+    return out;
   }
 
   /// Emit this assembly as a PDB-format byte buffer. Empty optional on

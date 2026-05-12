@@ -62,6 +62,7 @@ use crate::adapters::{bcif, cif, pdb};
 use crate::assembly::Assembly;
 use crate::element::Element;
 use crate::entity::molecule::{Atom, MoleculeEntity, MoleculeType, Residue};
+use crate::ops::wire::{deserialize_assembly, serialize_assembly};
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
@@ -318,6 +319,34 @@ pub extern "C" fn molex_cif_str_to_assembly(
     }
 }
 
+/// Decode ASSEM01 binary bytes into an `Assembly`.
+///
+/// Bytes must start with the `ASSEM01\0` magic header followed by the
+/// entity / atom payload (see `crate::ops::wire`). Returns null on
+/// failure with the error message available via [`molex_last_error_message`].
+/// The caller owns the returned handle and must free it with
+/// [`molex_assembly_free`].
+#[no_mangle]
+pub extern "C" fn molex_assem01_to_assembly(
+    bytes_ptr: *const u8,
+    len: usize,
+) -> *mut molex_Assembly {
+    let Some(bytes) = slice_from_raw(bytes_ptr, len) else {
+        set_last_error(&"molex_assem01_to_assembly: null input pointer");
+        return std::ptr::null_mut();
+    };
+    match deserialize_assembly(bytes) {
+        Ok(assembly) => {
+            clear_last_error();
+            Box::into_raw(Box::new(assembly)).cast::<molex_Assembly>()
+        }
+        Err(e) => {
+            set_last_error(&e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
 /// Decode BinaryCIF bytes into an `Assembly`.
 ///
 /// Returns null on failure with the error message available via
@@ -362,6 +391,38 @@ fn vec_to_out_buffer(
         *out_len = len;
     }
     MOLEX_OK
+}
+
+/// Emit an `Assembly` as ASSEM01 binary bytes.
+///
+/// On success returns [`MOLEX_OK`] and writes the heap-allocated buffer
+/// pointer + length to `out_buf` / `out_len`; the caller frees with
+/// [`molex_free_bytes`]. On failure returns a nonzero status and the
+/// error message is available via [`molex_last_error_message`].
+#[no_mangle]
+pub extern "C" fn molex_assembly_to_assem01(
+    assembly: *const molex_Assembly,
+    out_buf: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out_buf.is_null() || out_len.is_null() {
+        set_last_error(&"molex_assembly_to_assem01: null pointer argument");
+        return MOLEX_ERR_NULL;
+    }
+    let Some(assembly) = assembly_inner(assembly) else {
+        set_last_error(&"molex_assembly_to_assem01: null pointer argument");
+        return MOLEX_ERR_NULL;
+    };
+    match serialize_assembly(assembly) {
+        Ok(bytes) => {
+            clear_last_error();
+            vec_to_out_buffer(bytes, out_buf, out_len)
+        }
+        Err(e) => {
+            set_last_error(&e);
+            MOLEX_ERR
+        }
+    }
 }
 
 /// Emit an `Assembly` as a PDB-format byte buffer.
@@ -500,6 +561,58 @@ fn polymer_residues(entity: &MoleculeEntity) -> Option<&[Residue]> {
         MoleculeEntity::Protein(p) => Some(&p.residues),
         MoleculeEntity::NucleicAcid(n) => Some(&n.residues),
         MoleculeEntity::SmallMolecule(_) | MoleculeEntity::Bulk(_) => None,
+    }
+}
+
+/// Pointer to the single 3-byte residue name carried by a non-polymer
+/// entity (`SmallMolecule` / `Bulk`). Writes 3 to `out_len` on success;
+/// returns null and writes 0 for polymers or a null `entity`.
+///
+/// The buffer is space-padded to 3 bytes; callers should strip trailing
+/// ASCII spaces if needed.
+#[no_mangle]
+pub extern "C" fn molex_entity_residue_name_single(
+    entity: *const molex_Entity,
+    out_len: *mut usize,
+) -> *const u8 {
+    let write_len = |len: usize| {
+        if !out_len.is_null() {
+            unsafe {
+                *out_len = len;
+            }
+        }
+    };
+    let Some(e) = entity_inner(entity) else {
+        write_len(0);
+        return std::ptr::null();
+    };
+    let name: &[u8; 3] = match e {
+        MoleculeEntity::SmallMolecule(s) => &s.residue_name,
+        MoleculeEntity::Bulk(b) => &b.residue_name,
+        MoleculeEntity::Protein(_) | MoleculeEntity::NucleicAcid(_) => {
+            write_len(0);
+            return std::ptr::null();
+        }
+    };
+    write_len(name.len());
+    name.as_ptr()
+}
+
+/// Number of equal-sized molecule chunks the atom set should be split
+/// into for non-polymer entities. Returns 1 for `SmallMolecule`,
+/// `BulkEntity::molecule_count` for `Bulk`, and 0 for polymers or a null
+/// `entity`.
+#[no_mangle]
+pub extern "C" fn molex_entity_molecule_count(
+    entity: *const molex_Entity,
+) -> usize {
+    let Some(e) = entity_inner(entity) else {
+        return 0;
+    };
+    match e {
+        MoleculeEntity::SmallMolecule(_) => 1,
+        MoleculeEntity::Bulk(b) => b.molecule_count,
+        MoleculeEntity::Protein(_) | MoleculeEntity::NucleicAcid(_) => 0,
     }
 }
 
