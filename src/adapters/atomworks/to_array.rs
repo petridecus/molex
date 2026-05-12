@@ -7,7 +7,8 @@ use pyo3::prelude::*;
 
 use super::{molecule_type_to_chain_type_id, molecule_type_to_mol_type_str};
 use crate::analysis::bonds::{infer_bonds, BondOrder, DEFAULT_TOLERANCE};
-use crate::element::Element;
+use crate::entity::molecule::atom::Atom;
+use crate::entity::molecule::polymer::Residue;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
 use crate::ops::wire::deserialize_assembly;
 
@@ -56,64 +57,142 @@ pub(crate) fn collect_atom_data<E: std::borrow::Borrow<MoleculeEntity>>(
 
     for entity in entities {
         let entity = entity.borrow();
-        let c = entity.to_coords();
-        append_entity_atoms(&mut data, entity, &c);
+        append_entity_atoms(&mut data, entity);
         append_entity_bonds(&mut data, entity, atom_offset);
-        atom_offset += c.num_atoms;
+        atom_offset += entity.atom_count();
     }
 
     data
 }
 
 /// Append per-atom annotation fields for one entity.
-fn append_entity_atoms(
-    data: &mut AtomData,
-    entity: &MoleculeEntity,
-    c: &crate::ops::codec::Coords,
-) {
+fn append_entity_atoms(data: &mut AtomData, entity: &MoleculeEntity) {
+    let mol_type = entity.molecule_type();
     let entity_id = entity.id().raw().cast_signed();
-    let mol_type_str =
-        molecule_type_to_mol_type_str(entity.molecule_type()).to_owned();
-    let chain_type_id =
-        i32::from(molecule_type_to_chain_type_id(entity.molecule_type()));
+    let mol_type_str = molecule_type_to_mol_type_str(mol_type).to_owned();
+    let chain_type_id = i32::from(molecule_type_to_chain_type_id(mol_type));
 
-    for i in 0..c.num_atoms {
-        let atom = &c.atoms[i];
-        data.coords_flat.push(atom.x);
-        data.coords_flat.push(atom.y);
-        data.coords_flat.push(atom.z);
+    let ctx = EntityCtx {
+        entity_id,
+        mol_type_str: &mol_type_str,
+        chain_type_id,
+    };
 
-        let cid = c.chain_ids[i];
-        data.chain_ids.push(if cid.is_ascii_alphanumeric() {
-            String::from(cid as char)
-        } else {
-            "A".to_owned()
-        });
+    match entity {
+        MoleculeEntity::Protein(e) => append_polymer_atoms(
+            data,
+            &ctx,
+            &e.atoms,
+            &e.residues,
+            e.pdb_chain_id,
+        ),
+        MoleculeEntity::NucleicAcid(e) => append_polymer_atoms(
+            data,
+            &ctx,
+            &e.atoms,
+            &e.residues,
+            e.pdb_chain_id,
+        ),
+        MoleculeEntity::SmallMolecule(e) => {
+            for atom in &e.atoms {
+                append_atom_row(data, &ctx, atom, b' ', e.residue_name, 1);
+            }
+        }
+        MoleculeEntity::Bulk(e) =>
+        {
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_possible_wrap,
+                reason = "atom count fits in i32 for valid structures"
+            )]
+            for (i, atom) in e.atoms.iter().enumerate() {
+                append_atom_row(
+                    data,
+                    &ctx,
+                    atom,
+                    b' ',
+                    e.residue_name,
+                    (i as i32) + 1,
+                );
+            }
+        }
+    }
+}
 
-        data.res_ids.push(c.res_nums[i]);
+struct EntityCtx<'a> {
+    entity_id: i32,
+    mol_type_str: &'a str,
+    chain_type_id: i32,
+}
 
-        let rn = std::str::from_utf8(&c.res_names[i])
+fn append_polymer_atoms(
+    data: &mut AtomData,
+    ctx: &EntityCtx<'_>,
+    atoms: &[Atom],
+    residues: &[Residue],
+    chain_id: u8,
+) {
+    for residue in residues {
+        for idx in residue.atom_range.clone() {
+            append_atom_row(
+                data,
+                ctx,
+                &atoms[idx],
+                chain_id,
+                residue.name,
+                residue.label_seq_id,
+            );
+        }
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "row payload is best passed positionally; bundling into a struct \
+              just to satisfy a lint trades clarity for noise"
+)]
+fn append_atom_row(
+    data: &mut AtomData,
+    ctx: &EntityCtx<'_>,
+    atom: &Atom,
+    chain_id: u8,
+    res_name: [u8; 3],
+    res_num: i32,
+) {
+    data.coords_flat.push(atom.position.x);
+    data.coords_flat.push(atom.position.y);
+    data.coords_flat.push(atom.position.z);
+
+    data.chain_ids.push(if chain_id.is_ascii_alphanumeric() {
+        String::from(chain_id as char)
+    } else {
+        "A".to_owned()
+    });
+
+    data.res_ids.push(res_num);
+
+    data.res_names.push(
+        std::str::from_utf8(&res_name)
             .unwrap_or("UNK")
             .trim()
-            .to_owned();
-        data.res_names.push(rn);
+            .to_owned(),
+    );
 
-        let an = std::str::from_utf8(&c.atom_names[i])
+    data.atom_names.push(
+        std::str::from_utf8(&atom.name)
             .unwrap_or("X")
             .trim()
-            .to_owned();
-        data.atom_names.push(an);
+            .to_owned(),
+    );
 
-        let elem = c.elements.get(i).copied().unwrap_or(Element::Unknown);
-        data.elements.push(elem.symbol().to_owned());
+    data.elements.push(atom.element.symbol().to_owned());
 
-        data.occupancies.push(atom.occupancy);
-        data.b_factors.push(atom.b_factor);
+    data.occupancies.push(atom.occupancy);
+    data.b_factors.push(atom.b_factor);
 
-        data.aw_entity_ids.push(entity_id);
-        data.aw_mol_types.push(mol_type_str.clone());
-        data.aw_chain_types.push(chain_type_id);
-    }
+    data.aw_entity_ids.push(ctx.entity_id);
+    data.aw_mol_types.push(ctx.mol_type_str.to_owned());
+    data.aw_chain_types.push(ctx.chain_type_id);
 }
 
 /// Infer and append bonds for a single entity (ligands/cofactors/ions only).

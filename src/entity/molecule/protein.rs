@@ -15,7 +15,6 @@ use crate::bond::CovalentBond;
 use crate::chemistry::amino_acids::AminoAcid;
 use crate::chemistry::atom_name::AtomName;
 use crate::element::Element;
-use crate::ops::codec::{extract_atom_set_and_residues, Coords};
 
 // ---------------------------------------------------------------------------
 // Per-residue types
@@ -253,18 +252,6 @@ impl ProteinEntity {
         }
         let atom = &self.atoms[atom_id.index as usize];
         atom.element != Element::H
-    }
-
-    /// Construct from flat `Coords` atom indices during entity splitting.
-    #[must_use]
-    pub(crate) fn from_coords_indices(
-        id: EntityId,
-        indices: &[usize],
-        coords: &Coords,
-        pdb_chain_id: u8,
-    ) -> Self {
-        let (atoms, residues) = extract_atom_set_and_residues(indices, coords);
-        Self::new(id, atoms, residues, pdb_chain_id, None)
     }
 
     /// Derive backbone (N, CA, C, O) for all residues.

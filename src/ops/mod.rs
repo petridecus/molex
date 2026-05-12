@@ -1,6 +1,6 @@
 //! Operations on molecular data.
 
-/// Crate-internal `Coords` parser intermediate + entity-utility helpers.
+/// Adapter / wire error type and protein-CA helper.
 pub mod codec;
 pub mod transform;
 /// ASSEM01 binary wire format encoder/decoder.

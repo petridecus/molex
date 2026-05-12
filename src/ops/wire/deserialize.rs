@@ -1,28 +1,34 @@
 //! Deserialization for the ASSEM01 binary wire format.
 
+use std::collections::HashSet;
+
+use glam::Vec3;
+
 use super::{molecule_type_from_wire, ASSEMBLY_MAGIC};
 use crate::element::Element;
-use crate::entity::molecule::id::EntityIdAllocator;
+use crate::entity::molecule::atom::Atom;
+use crate::entity::molecule::bulk::BulkEntity;
+use crate::entity::molecule::id::{EntityId, EntityIdAllocator};
+use crate::entity::molecule::nucleic_acid::NAEntity;
+use crate::entity::molecule::polymer::Residue;
+use crate::entity::molecule::protein::ProteinEntity;
+use crate::entity::molecule::small_molecule::SmallMoleculeEntity;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
-use crate::ops::codec::{
-    coords_to_molecule_entity, AdapterError, Coords, CoordsAtom,
-};
+use crate::ops::codec::AdapterError;
 
-/// One atom's worth of parsed ASSEM01 binary data.
-struct ParsedAtom<'a> {
-    atom: CoordsAtom,
+/// Width of one ASSEM01 atom row in bytes.
+const ATOM_ROW_BYTES: usize = 26;
+
+/// One atom row decoded from the wire, paired with the per-atom
+/// residue/chain context used to group atoms into residues.
+struct AtomRow {
+    atom: Atom,
     chain_id: u8,
     res_name: [u8; 3],
     res_num: i32,
-    atom_name: [u8; 4],
-    element: Element,
-    rest: &'a [u8],
 }
 
-/// Read one 26-byte ASSEM01 atom row from a cursor slice.
-fn read_atom_from_cursor(
-    cursor: &[u8],
-) -> Result<ParsedAtom<'_>, AdapterError> {
+fn read_atom_row(cursor: &[u8]) -> Result<AtomRow, AdapterError> {
     let x = f32::from_be_bytes(cursor[0..4].try_into().map_err(|_| {
         AdapterError::SerializationError("Invalid x coordinate".to_owned())
     })?);
@@ -32,83 +38,158 @@ fn read_atom_from_cursor(
     let z = f32::from_be_bytes(cursor[8..12].try_into().map_err(|_| {
         AdapterError::SerializationError("Invalid z coordinate".to_owned())
     })?);
-    let atom = CoordsAtom {
-        x,
-        y,
-        z,
-        occupancy: 1.0,
-        b_factor: 0.0,
-    };
-    let rest = &cursor[12..];
 
-    let chain_id = rest[0];
-    let rest = &rest[1..];
+    let chain_id = cursor[12];
 
     let mut res_name = [0u8; 3];
-    res_name.copy_from_slice(&rest[0..3]);
-    let rest = &rest[3..];
+    res_name.copy_from_slice(&cursor[13..16]);
 
-    let res_num = i32::from_be_bytes(rest[0..4].try_into().map_err(|_| {
-        AdapterError::SerializationError("Invalid residue number".to_owned())
-    })?);
-    let rest = &rest[4..];
+    let res_num =
+        i32::from_be_bytes(cursor[16..20].try_into().map_err(|_| {
+            AdapterError::SerializationError(
+                "Invalid residue number".to_owned(),
+            )
+        })?);
 
     let mut atom_name = [0u8; 4];
-    atom_name.copy_from_slice(&rest[0..4]);
-    let rest = &rest[4..];
+    atom_name.copy_from_slice(&cursor[20..24]);
 
-    let sym_str = std::str::from_utf8(&rest[0..2])
+    let sym_str = std::str::from_utf8(&cursor[24..26])
         .unwrap_or("")
         .trim_matches('\0')
         .trim();
     let element = Element::from_symbol(sym_str);
-    let rest = &rest[2..];
 
-    Ok(ParsedAtom {
-        atom,
+    Ok(AtomRow {
+        atom: Atom {
+            position: Vec3::new(x, y, z),
+            occupancy: 1.0,
+            b_factor: 0.0,
+            element,
+            name: atom_name,
+            formal_charge: 0,
+        },
         chain_id,
         res_name,
         res_num,
-        atom_name,
-        element,
-        rest,
     })
 }
 
-/// Read `num_atoms` 26-byte rows from a cursor, returning a `Coords` and
+/// Read `atom_count` atom rows from a cursor, returning the rows and
 /// the remaining bytes.
-fn read_atoms_to_coords(
+fn read_atom_rows(
     mut cursor: &[u8],
-    num_atoms: usize,
-) -> Result<(Coords, &[u8]), AdapterError> {
-    let mut atoms = Vec::with_capacity(num_atoms);
-    let mut chain_ids = Vec::with_capacity(num_atoms);
-    let mut res_names = Vec::with_capacity(num_atoms);
-    let mut res_nums = Vec::with_capacity(num_atoms);
-    let mut atom_names = Vec::with_capacity(num_atoms);
-    let mut elements = Vec::with_capacity(num_atoms);
+    atom_count: usize,
+) -> Result<(Vec<AtomRow>, &[u8]), AdapterError> {
+    let mut rows = Vec::with_capacity(atom_count);
+    for _ in 0..atom_count {
+        rows.push(read_atom_row(cursor)?);
+        cursor = &cursor[ATOM_ROW_BYTES..];
+    }
+    Ok((rows, cursor))
+}
 
-    for _ in 0..num_atoms {
-        let parsed = read_atom_from_cursor(cursor)?;
-        atoms.push(parsed.atom);
-        chain_ids.push(parsed.chain_id);
-        res_names.push(parsed.res_name);
-        res_nums.push(parsed.res_num);
-        atom_names.push(parsed.atom_name);
-        elements.push(parsed.element);
-        cursor = parsed.rest;
+/// Split atom rows into `(Vec<Atom>, Vec<Residue>)` by grouping
+/// consecutive rows sharing the same residue number.
+fn into_atoms_and_residues(rows: Vec<AtomRow>) -> (Vec<Atom>, Vec<Residue>) {
+    let mut atoms = Vec::with_capacity(rows.len());
+    let mut residues = Vec::new();
+    let mut current_res_num: Option<i32> = None;
+    let mut current_res_name: [u8; 3] = [b' '; 3];
+    let mut current_start = 0usize;
+
+    for row in rows {
+        let new_residue = current_res_num.is_none_or(|n| n != row.res_num);
+        if new_residue {
+            if let Some(rn) = current_res_num {
+                residues.push(Residue {
+                    name: current_res_name,
+                    label_seq_id: rn,
+                    auth_seq_id: None,
+                    auth_comp_id: None,
+                    ins_code: None,
+                    atom_range: current_start..atoms.len(),
+                });
+            }
+            current_start = atoms.len();
+            current_res_num = Some(row.res_num);
+            current_res_name = row.res_name;
+        }
+        atoms.push(row.atom);
+    }
+    if let Some(rn) = current_res_num {
+        residues.push(Residue {
+            name: current_res_name,
+            label_seq_id: rn,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
+            atom_range: current_start..atoms.len(),
+        });
     }
 
-    let coords = Coords {
-        num_atoms,
-        atoms,
-        chain_ids,
-        res_names,
-        res_nums,
-        atom_names,
-        elements,
-    };
-    Ok((coords, cursor))
+    (atoms, residues)
+}
+
+fn build_entity(
+    id: EntityId,
+    mol_type: MoleculeType,
+    rows: Vec<AtomRow>,
+) -> MoleculeEntity {
+    let pdb_chain_id = rows.first().map_or(b' ', |r| r.chain_id);
+
+    match mol_type {
+        MoleculeType::Protein => {
+            let (atoms, residues) = into_atoms_and_residues(rows);
+            MoleculeEntity::Protein(ProteinEntity::new(
+                id,
+                atoms,
+                residues,
+                pdb_chain_id,
+                None,
+            ))
+        }
+        MoleculeType::DNA | MoleculeType::RNA => {
+            let (atoms, residues) = into_atoms_and_residues(rows);
+            MoleculeEntity::NucleicAcid(NAEntity::new(
+                id,
+                mol_type,
+                atoms,
+                residues,
+                pdb_chain_id,
+                None,
+            ))
+        }
+        MoleculeType::Water | MoleculeType::Solvent => {
+            let residue_name = rows.first().map_or([b' '; 3], |r| r.res_name);
+            let mut seen = HashSet::new();
+            for row in &rows {
+                let _ = seen.insert((row.chain_id, row.res_num));
+            }
+            let molecule_count = seen.len();
+            let atoms = rows.into_iter().map(|r| r.atom).collect();
+            MoleculeEntity::Bulk(BulkEntity::new(
+                id,
+                mol_type,
+                atoms,
+                residue_name,
+                molecule_count,
+            ))
+        }
+        MoleculeType::Ligand
+        | MoleculeType::Ion
+        | MoleculeType::Cofactor
+        | MoleculeType::Lipid => {
+            let residue_name = rows.first().map_or([b' '; 3], |r| r.res_name);
+            let atoms = rows.into_iter().map(|r| r.atom).collect();
+            MoleculeEntity::SmallMolecule(SmallMoleculeEntity::new(
+                id,
+                mol_type,
+                atoms,
+                residue_name,
+            ))
+        }
+    }
 }
 
 /// Parse entity headers from ASSEM01 binary, returning
@@ -202,7 +283,7 @@ pub(crate) fn deserialize_assembly_entities(
         parse_entity_headers(bytes, entity_count)?;
 
     let total_atoms: usize = entity_headers.iter().map(|(_, c)| c).sum();
-    if bytes.len() < headers_end + total_atoms * 26 {
+    if bytes.len() < headers_end + total_atoms * ATOM_ROW_BYTES {
         return Err(AdapterError::InvalidFormat(
             "Data too short for atom data".to_owned(),
         ));
@@ -213,10 +294,10 @@ pub(crate) fn deserialize_assembly_entities(
     let mut allocator = EntityIdAllocator::new();
 
     for (mol_type, atom_count) in entity_headers {
-        let (coords, rest) = read_atoms_to_coords(cursor, atom_count)?;
+        let (rows, rest) = read_atom_rows(cursor, atom_count)?;
         cursor = rest;
         let id = allocator.allocate();
-        entities.push(coords_to_molecule_entity(id, mol_type, &coords));
+        entities.push(build_entity(id, mol_type, rows));
     }
 
     Ok(entities)

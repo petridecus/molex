@@ -5,6 +5,7 @@ pub mod atom;
 pub(crate) mod builder;
 /// Bulk entity (water, solvent).
 pub mod bulk;
+pub(crate) mod chain;
 pub(crate) mod classify;
 /// Opaque entity ID with controlled allocation.
 pub mod id;
@@ -39,7 +40,6 @@ use self::protein::ProteinEntity;
 use self::small_molecule::SmallMoleculeEntity;
 use self::traits::Entity;
 use crate::analysis::aabb::Aabb;
-use crate::ops::codec::{Coords, CoordsAtom};
 /// Classification of molecule types found in structural biology files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MoleculeType {
@@ -191,39 +191,6 @@ impl MoleculeEntity {
         }
     }
 
-    /// Convert to a flat `Coords` for serialization or interop.
-    #[must_use]
-    #[allow(
-        dead_code,
-        reason = "only called under feature = \"python\" (atomworks bridge) \
-                  and in tests"
-    )]
-    pub(crate) fn to_coords(&self) -> Coords {
-        match self {
-            MoleculeEntity::Protein(e) => {
-                polymer_entity_to_coords(&e.atoms, &e.residues, e.pdb_chain_id)
-            }
-            MoleculeEntity::NucleicAcid(e) => {
-                polymer_entity_to_coords(&e.atoms, &e.residues, e.pdb_chain_id)
-            }
-            MoleculeEntity::SmallMolecule(e) => atoms_to_coords(
-                &e.atoms,
-                e.residue_name,
-                vec![1; e.atoms.len()],
-            ),
-            MoleculeEntity::Bulk(e) => {
-                let n = e.atoms.len();
-                #[allow(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_possible_wrap,
-                    reason = "atom count fits in i32 for valid structures"
-                )]
-                let res_nums = (1..=n as i32).collect();
-                atoms_to_coords(&e.atoms, e.residue_name, res_nums)
-            }
-        }
-    }
-
     /// Compute the axis-aligned bounding box for this entity's atoms.
     #[must_use]
     pub fn aabb(&self) -> Option<Aabb> {
@@ -311,8 +278,7 @@ impl MoleculeEntity {
         }
     }
 
-    /// Set the entity ID. Used during re-assignment (e.g. after
-    /// `update_protein_entities`).
+    /// Set the entity ID. Used when reassembling an entity vec.
     pub fn set_id(&mut self, new_id: EntityId) {
         match self {
             MoleculeEntity::Protein(e) => e.id = new_id,
@@ -331,248 +297,140 @@ fn polymer_label(entity: &MoleculeEntity, type_name: &str) -> String {
     )
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/// Convert polymer entity fields to flat `Coords`.
-#[allow(dead_code, reason = "helper for to_coords; same retention rationale")]
-fn polymer_entity_to_coords(
-    atoms: &[Atom],
-    residues: &[Residue],
-    pdb_chain_id: u8,
-) -> Coords {
-    let n = atoms.len();
-    let mut res_names = Vec::with_capacity(n);
-    let mut res_nums = Vec::with_capacity(n);
-    for residue in residues {
-        for _ in residue.atom_range.clone() {
-            res_names.push(residue.name);
-            res_nums.push(residue.label_seq_id);
-        }
-    }
-    Coords {
-        num_atoms: n,
-        atoms: atoms
-            .iter()
-            .map(|a| CoordsAtom {
-                x: a.position.x,
-                y: a.position.y,
-                z: a.position.z,
-                occupancy: a.occupancy,
-                b_factor: a.b_factor,
-            })
-            .collect(),
-        chain_ids: vec![pdb_chain_id; n],
-        res_names,
-        res_nums,
-        atom_names: atoms.iter().map(|a| a.name).collect(),
-        elements: atoms.iter().map(|a| a.element).collect(),
-    }
-}
-
-/// Convert a flat `Vec<Atom>` to `Coords` with uniform residue metadata.
-#[allow(dead_code, reason = "helper for to_coords; same retention rationale")]
-fn atoms_to_coords(
-    atoms: &[Atom],
-    residue_name: [u8; 3],
-    res_nums: Vec<i32>,
-) -> Coords {
-    let n = atoms.len();
-    Coords {
-        num_atoms: n,
-        atoms: atoms
-            .iter()
-            .map(|a| CoordsAtom {
-                x: a.position.x,
-                y: a.position.y,
-                z: a.position.z,
-                occupancy: a.occupancy,
-                b_factor: a.b_factor,
-            })
-            .collect(),
-        chain_ids: vec![b' '; n],
-        res_names: vec![residue_name; n],
-        res_nums,
-        atom_names: atoms.iter().map(|a| a.name).collect(),
-        elements: atoms.iter().map(|a| a.element).collect(),
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::element::Element;
-    use crate::ops::codec::{split_into_entities, Coords, CoordsAtom};
+    use crate::entity::molecule::id::EntityIdAllocator;
 
-    fn make_atom(x: f32, y: f32, z: f32) -> CoordsAtom {
-        CoordsAtom {
-            x,
-            y,
-            z,
+    fn atom_at(name: &str, element: Element, x: f32, y: f32, z: f32) -> Atom {
+        let mut n = [b' '; 4];
+        for (i, b) in name.bytes().take(4).enumerate() {
+            n[i] = b;
+        }
+        Atom {
+            position: Vec3::new(x, y, z),
             occupancy: 1.0,
             b_factor: 0.0,
+            element,
+            name: n,
+            formal_charge: 0,
         }
     }
-    fn res_name(s: &str) -> [u8; 3] {
+
+    fn res_bytes(s: &str) -> [u8; 3] {
         let mut n = [b' '; 3];
         for (i, b) in s.bytes().take(3).enumerate() {
             n[i] = b;
         }
         n
     }
-    fn atom_name(s: &str) -> [u8; 4] {
-        let mut n = [b' '; 4];
-        for (i, b) in s.bytes().take(4).enumerate() {
-            n[i] = b;
+
+    fn residue(name: &str, seq: i32, range: std::ops::Range<usize>) -> Residue {
+        Residue {
+            name: res_bytes(name),
+            label_seq_id: seq,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
+            atom_range: range,
         }
-        n
     }
 
     /// Build a 2-residue protein (ALA-GLY) on chain A with backbone atoms
-    /// at known positions.
-    fn make_two_residue_protein() -> Coords {
-        Coords {
-            num_atoms: 8,
-            atoms: vec![
-                make_atom(1.0, 2.0, 3.0),    // res1 N
-                make_atom(4.0, 5.0, 6.0),    // res1 CA
-                make_atom(7.0, 8.0, 9.0),    // res1 C
-                make_atom(10.0, 11.0, 12.0), // res1 O
-                make_atom(13.0, 14.0, 15.0), // res2 N
-                make_atom(16.0, 17.0, 18.0), // res2 CA
-                make_atom(19.0, 20.0, 21.0), // res2 C
-                make_atom(22.0, 23.0, 24.0), // res2 O
-            ],
-            chain_ids: vec![b'A'; 8],
-            res_names: vec![
-                res_name("ALA"),
-                res_name("ALA"),
-                res_name("ALA"),
-                res_name("ALA"),
-                res_name("GLY"),
-                res_name("GLY"),
-                res_name("GLY"),
-                res_name("GLY"),
-            ],
-            res_nums: vec![1, 1, 1, 1, 2, 2, 2, 2],
-            atom_names: vec![
-                atom_name("N"),
-                atom_name("CA"),
-                atom_name("C"),
-                atom_name("O"),
-                atom_name("N"),
-                atom_name("CA"),
-                atom_name("C"),
-                atom_name("O"),
-            ],
-            elements: vec![
-                Element::N,
-                Element::C,
-                Element::C,
-                Element::O,
-                Element::N,
-                Element::C,
-                Element::C,
-                Element::O,
-            ],
-        }
+    /// at known positions. The C->N gap between residues exceeds 2 Å so a
+    /// segment break falls between them.
+    fn two_residue_protein() -> MoleculeEntity {
+        let atoms = vec![
+            atom_at("N", Element::N, 1.0, 2.0, 3.0),
+            atom_at("CA", Element::C, 4.0, 5.0, 6.0),
+            atom_at("C", Element::C, 7.0, 8.0, 9.0),
+            atom_at("O", Element::O, 10.0, 11.0, 12.0),
+            atom_at("N", Element::N, 13.0, 14.0, 15.0),
+            atom_at("CA", Element::C, 16.0, 17.0, 18.0),
+            atom_at("C", Element::C, 19.0, 20.0, 21.0),
+            atom_at("O", Element::O, 22.0, 23.0, 24.0),
+        ];
+        let residues = vec![residue("ALA", 1, 0..4), residue("GLY", 2, 4..8)];
+        let id = EntityIdAllocator::new().allocate();
+        MoleculeEntity::Protein(ProteinEntity::new(
+            id, atoms, residues, b'A', None,
+        ))
+    }
+
+    fn water_entity(positions: &[Vec3]) -> MoleculeEntity {
+        let atoms: Vec<Atom> = positions
+            .iter()
+            .map(|p| atom_at("O", Element::O, p.x, p.y, p.z))
+            .collect();
+        let id = EntityIdAllocator::new().allocate();
+        MoleculeEntity::Bulk(BulkEntity::new(
+            id,
+            MoleculeType::Water,
+            atoms,
+            res_bytes("HOH"),
+            positions.len(),
+        ))
+    }
+
+    fn zinc_ion() -> MoleculeEntity {
+        let atoms = vec![atom_at("ZN", Element::Zn, 5.0, 6.0, 7.0)];
+        let id = EntityIdAllocator::new().allocate();
+        MoleculeEntity::SmallMolecule(SmallMoleculeEntity::new(
+            id,
+            MoleculeType::Ion,
+            atoms,
+            res_bytes("ZN"),
+        ))
     }
 
     #[test]
-    fn split_produces_protein_entity() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        assert_eq!(entities.len(), 1);
-        assert_eq!(entities[0].molecule_type(), MoleculeType::Protein);
+    fn protein_classifies_correctly() {
+        let entity = two_residue_protein();
+        assert_eq!(entity.molecule_type(), MoleculeType::Protein);
     }
 
     #[test]
     fn entity_id_is_set() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        // ID should be valid (non-zero value from allocator)
-        let _id = entities[0].id();
+        let entity = two_residue_protein();
+        let _id = entity.id();
     }
 
     #[test]
     fn atom_set_and_atom_count() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        assert_eq!(entities[0].atom_count(), 8);
-        assert_eq!(entities[0].atom_set().len(), 8);
+        let entity = two_residue_protein();
+        assert_eq!(entity.atom_count(), 8);
+        assert_eq!(entity.atom_set().len(), 8);
     }
 
     #[test]
     fn as_protein_returns_some_for_protein() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        assert!(entities[0].as_protein().is_some());
-        assert!(entities[0].as_nucleic_acid().is_none());
-        assert!(entities[0].as_small_molecule().is_none());
-        assert!(entities[0].as_bulk().is_none());
+        let entity = two_residue_protein();
+        assert!(entity.as_protein().is_some());
+        assert!(entity.as_nucleic_acid().is_none());
+        assert!(entity.as_small_molecule().is_none());
+        assert!(entity.as_bulk().is_none());
     }
 
     #[test]
     fn label_for_protein() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        let label = entities[0].label();
+        let entity = two_residue_protein();
+        let label = entity.label();
         assert!(label.contains("Protein"), "label={label}");
         assert!(label.contains('A'), "label should contain chain A: {label}");
     }
 
     #[test]
     fn residue_count_for_protein() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        assert_eq!(entities[0].residue_count(), 2);
-    }
-
-    #[test]
-    fn to_coords_roundtrip_preserves_atom_count() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        let recovered = entities[0].to_coords();
-        assert_eq!(recovered.num_atoms, 8);
-    }
-
-    #[test]
-    fn to_coords_roundtrip_preserves_positions() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        let recovered = entities[0].to_coords();
-        assert!((recovered.atoms[0].x - 1.0).abs() < 1e-6);
-        assert!((recovered.atoms[0].y - 2.0).abs() < 1e-6);
-        assert!((recovered.atoms[0].z - 3.0).abs() < 1e-6);
-        assert!((recovered.atoms[7].x - 22.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn to_coords_roundtrip_preserves_chain_ids() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        let recovered = entities[0].to_coords();
-        for &cid in &recovered.chain_ids {
-            assert_eq!(cid, b'A');
-        }
-    }
-
-    #[test]
-    fn to_coords_roundtrip_preserves_res_names() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        let recovered = entities[0].to_coords();
-        assert_eq!(recovered.res_names[0], res_name("ALA"));
-        assert_eq!(recovered.res_names[4], res_name("GLY"));
+        let entity = two_residue_protein();
+        assert_eq!(entity.residue_count(), 2);
     }
 
     #[test]
     fn aabb_is_some_for_nonempty_entity() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        let aabb = entities[0].aabb();
+        let entity = two_residue_protein();
+        let aabb = entity.aabb();
         assert!(aabb.is_some());
         let bb = aabb.unwrap();
         assert!(bb.min.x <= 1.0);
@@ -581,27 +439,16 @@ mod tests {
 
     #[test]
     fn positions_returns_all_atom_positions() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        let positions = entities[0].positions();
+        let entity = two_residue_protein();
+        let positions = entity.positions();
         assert_eq!(positions.len(), 8);
         assert!((positions[0].x - 1.0).abs() < 1e-6);
     }
 
     #[test]
     fn water_entity_accessors() {
-        let coords = Coords {
-            num_atoms: 2,
-            atoms: vec![make_atom(1.0, 2.0, 3.0), make_atom(4.0, 5.0, 6.0)],
-            chain_ids: vec![b' ', b' '],
-            res_names: vec![res_name("HOH"), res_name("HOH")],
-            res_nums: vec![100, 101],
-            atom_names: vec![atom_name("O"), atom_name("O")],
-            elements: vec![Element::O; 2],
-        };
-        let entities = split_into_entities(&coords);
-        assert_eq!(entities.len(), 1);
-        let water = &entities[0];
+        let water =
+            water_entity(&[Vec3::new(1.0, 2.0, 3.0), Vec3::new(4.0, 5.0, 6.0)]);
         assert_eq!(water.molecule_type(), MoleculeType::Water);
         assert!(water.as_bulk().is_some());
         assert_eq!(water.atom_count(), 2);
@@ -611,18 +458,7 @@ mod tests {
 
     #[test]
     fn ion_entity_accessors() {
-        let coords = Coords {
-            num_atoms: 1,
-            atoms: vec![make_atom(5.0, 6.0, 7.0)],
-            chain_ids: vec![b'Z'],
-            res_names: vec![res_name("ZN")],
-            res_nums: vec![200],
-            atom_names: vec![atom_name("ZN")],
-            elements: vec![Element::Zn],
-        };
-        let entities = split_into_entities(&coords);
-        assert_eq!(entities.len(), 1);
-        let ion = &entities[0];
+        let ion = zinc_ion();
         assert_eq!(ion.molecule_type(), MoleculeType::Ion);
         assert!(ion.as_small_molecule().is_some());
         assert_eq!(ion.residue_count(), 1);
@@ -630,29 +466,16 @@ mod tests {
 
     #[test]
     fn is_focusable_for_protein_and_water() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        // Protein is focusable
-        assert!(entities[0].is_focusable());
+        let protein = two_residue_protein();
+        assert!(protein.is_focusable());
 
-        // Water is not focusable
-        let water_coords = Coords {
-            num_atoms: 1,
-            atoms: vec![make_atom(0.0, 0.0, 0.0)],
-            chain_ids: vec![b' '],
-            res_names: vec![res_name("HOH")],
-            res_nums: vec![1],
-            atom_names: vec![atom_name("O")],
-            elements: vec![Element::O],
-        };
-        let water_entities = split_into_entities(&water_coords);
-        assert!(!water_entities[0].is_focusable());
+        let water = water_entity(&[Vec3::ZERO]);
+        assert!(!water.is_focusable());
     }
 
     #[test]
     fn pdb_chain_id_for_protein() {
-        let coords = make_two_residue_protein();
-        let entities = split_into_entities(&coords);
-        assert_eq!(entities[0].pdb_chain_id(), Some(b'A'));
+        let entity = two_residue_protein();
+        assert_eq!(entity.pdb_chain_id(), Some(b'A'));
     }
 }

@@ -3,9 +3,6 @@
 //! The wire format carries entity headers (molecule type + atom count) plus
 //! 26-byte atom rows. See [`crate::ops::wire::serialize_assembly`] for the
 //! byte layout.
-//!
-//! Wire encoding/decoding internally materializes a `Coords` intermediate
-//! for the per-atom byte block; that intermediate is private to the crate.
 
 pub(crate) mod deserialize;
 pub(crate) mod serialize;
@@ -60,3 +57,7 @@ pub fn assembly_bytes(
 
 pub use deserialize::deserialize_assembly;
 pub use serialize::serialize_assembly;
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

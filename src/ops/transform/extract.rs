@@ -61,87 +61,81 @@ pub fn centroid(points: &[Vec3]) -> Vec3 {
 mod tests {
     use super::*;
     use crate::element::Element;
-    use crate::ops::codec::{split_into_entities, Coords, CoordsAtom};
+    use crate::entity::molecule::atom::Atom;
+    use crate::entity::molecule::bulk::BulkEntity;
+    use crate::entity::molecule::id::EntityIdAllocator;
+    use crate::entity::molecule::polymer::Residue;
+    use crate::entity::molecule::MoleculeType;
 
-    fn make_atom(x: f32, y: f32, z: f32) -> CoordsAtom {
-        CoordsAtom {
-            x,
-            y,
-            z,
+    fn atom_at(name: &str, element: Element, x: f32, y: f32, z: f32) -> Atom {
+        let mut n = [b' '; 4];
+        for (i, b) in name.bytes().take(4).enumerate() {
+            n[i] = b;
+        }
+        Atom {
+            position: Vec3::new(x, y, z),
             occupancy: 1.0,
             b_factor: 0.0,
+            element,
+            name: n,
+            formal_charge: 0,
         }
     }
-    fn res_name(s: &str) -> [u8; 3] {
+
+    fn res_bytes(s: &str) -> [u8; 3] {
         let mut n = [b' '; 3];
         for (i, b) in s.bytes().take(3).enumerate() {
             n[i] = b;
         }
         n
     }
-    fn atom_name(s: &str) -> [u8; 4] {
-        let mut n = [b' '; 4];
-        for (i, b) in s.bytes().take(4).enumerate() {
-            n[i] = b;
+
+    fn residue(name: &str, seq: i32, range: std::ops::Range<usize>) -> Residue {
+        Residue {
+            name: res_bytes(name),
+            label_seq_id: seq,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
+            atom_range: range,
         }
-        n
     }
 
-    fn make_two_residue_protein_entities() -> Vec<MoleculeEntity> {
-        let coords = Coords {
-            num_atoms: 8,
-            atoms: vec![
-                make_atom(1.0, 2.0, 3.0), // N
-                make_atom(4.0, 5.0, 6.0), // CA
-                make_atom(5.3, 5.0, 6.0), /* C (close to next N for no
-                                           * break) */
-                make_atom(5.3, 6.0, 6.0),    // O
-                make_atom(6.5, 5.0, 6.0),    // N (1.2A from prev C)
-                make_atom(16.0, 17.0, 18.0), // CA
-                make_atom(19.0, 20.0, 21.0), // C
-                make_atom(22.0, 23.0, 24.0), // O
-            ],
-            chain_ids: vec![b'A'; 8],
-            res_names: vec![
-                res_name("ALA"),
-                res_name("ALA"),
-                res_name("ALA"),
-                res_name("ALA"),
-                res_name("GLY"),
-                res_name("GLY"),
-                res_name("GLY"),
-                res_name("GLY"),
-            ],
-            res_nums: vec![1, 1, 1, 1, 2, 2, 2, 2],
-            atom_names: vec![
-                atom_name("N"),
-                atom_name("CA"),
-                atom_name("C"),
-                atom_name("O"),
-                atom_name("N"),
-                atom_name("CA"),
-                atom_name("C"),
-                atom_name("O"),
-            ],
-            elements: vec![
-                Element::N,
-                Element::C,
-                Element::C,
-                Element::O,
-                Element::N,
-                Element::C,
-                Element::C,
-                Element::O,
-            ],
-        };
-        split_into_entities(&coords)
+    fn two_residue_protein_entities() -> Vec<MoleculeEntity> {
+        let atoms = vec![
+            atom_at("N", Element::N, 1.0, 2.0, 3.0),
+            atom_at("CA", Element::C, 4.0, 5.0, 6.0),
+            atom_at("C", Element::C, 5.3, 5.0, 6.0),
+            atom_at("O", Element::O, 5.3, 6.0, 6.0),
+            atom_at("N", Element::N, 6.5, 5.0, 6.0),
+            atom_at("CA", Element::C, 16.0, 17.0, 18.0),
+            atom_at("C", Element::C, 19.0, 20.0, 21.0),
+            atom_at("O", Element::O, 22.0, 23.0, 24.0),
+        ];
+        let residues = vec![residue("ALA", 1, 0..4), residue("GLY", 2, 4..8)];
+        let id = EntityIdAllocator::new().allocate();
+        vec![MoleculeEntity::Protein(ProteinEntity::new(
+            id, atoms, residues, b'A', None,
+        ))]
+    }
+
+    fn single_water() -> Vec<MoleculeEntity> {
+        let atoms = vec![atom_at("O", Element::O, 1.0, 2.0, 3.0)];
+        let id = EntityIdAllocator::new().allocate();
+        vec![MoleculeEntity::Bulk(BulkEntity::new(
+            id,
+            MoleculeType::Water,
+            atoms,
+            res_bytes("HOH"),
+            1,
+        ))]
     }
 
     // -- extract_ca_positions --
 
     #[test]
     fn extract_ca_positions_from_protein() {
-        let entities = make_two_residue_protein_entities();
+        let entities = two_residue_protein_entities();
         let ca_pos = extract_ca_positions(&entities);
         assert_eq!(ca_pos.len(), 2);
         assert!((ca_pos[0].x - 4.0).abs() < 1e-6);
@@ -150,16 +144,7 @@ mod tests {
 
     #[test]
     fn extract_ca_positions_empty_for_non_protein() {
-        let coords = Coords {
-            num_atoms: 1,
-            atoms: vec![make_atom(1.0, 2.0, 3.0)],
-            chain_ids: vec![b' '],
-            res_names: vec![res_name("HOH")],
-            res_nums: vec![100],
-            atom_names: vec![atom_name("O")],
-            elements: vec![Element::O],
-        };
-        let entities = split_into_entities(&coords);
+        let entities = single_water();
         let ca_pos = extract_ca_positions(&entities);
         assert!(ca_pos.is_empty());
     }
@@ -174,11 +159,9 @@ mod tests {
 
     #[test]
     fn extract_backbone_segments_from_protein() {
-        let entities = make_two_residue_protein_entities();
+        let entities = two_residue_protein_entities();
         let segments = extract_backbone_segments(&entities);
         assert!(!segments.is_empty());
-        // Each segment should have positions that are multiples of 3 (N,CA,C
-        // per residue)
         for seg in &segments {
             assert_eq!(seg.len() % 3, 0);
         }
@@ -186,16 +169,7 @@ mod tests {
 
     #[test]
     fn extract_backbone_segments_empty_for_non_protein() {
-        let coords = Coords {
-            num_atoms: 1,
-            atoms: vec![make_atom(1.0, 2.0, 3.0)],
-            chain_ids: vec![b' '],
-            res_names: vec![res_name("HOH")],
-            res_nums: vec![100],
-            atom_names: vec![atom_name("O")],
-            elements: vec![Element::O],
-        };
-        let entities = split_into_entities(&coords);
+        let entities = single_water();
         let segments = extract_backbone_segments(&entities);
         assert!(segments.is_empty());
     }

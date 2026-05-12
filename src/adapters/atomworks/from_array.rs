@@ -4,14 +4,24 @@
 //! `atom_array_to_entities`, `atom_array_to_entity_vec`, and the
 //! `parse_file_*` pyfunction wrappers.
 
+use std::collections::HashSet;
+
+use glam::Vec3;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use super::{chain_type_id_to_molecule_type, mol_type_str_to_molecule_type};
 use crate::assembly::Assembly;
 use crate::element::Element;
+use crate::entity::molecule::atom::Atom;
+use crate::entity::molecule::bulk::BulkEntity;
+use crate::entity::molecule::chain::ChainIdMapper;
+use crate::entity::molecule::id::{EntityId, EntityIdAllocator};
+use crate::entity::molecule::nucleic_acid::NAEntity;
+use crate::entity::molecule::polymer::Residue;
+use crate::entity::molecule::protein::ProteinEntity;
+use crate::entity::molecule::small_molecule::SmallMoleculeEntity;
 use crate::entity::molecule::{MoleculeEntity, MoleculeType};
-use crate::ops::codec::{ChainIdMapper, Coords, CoordsAtom};
 use crate::ops::wire::serialize_assembly;
 
 /// Determine per-atom entity ID assignments from annotations on the atom array.
@@ -66,6 +76,15 @@ struct AtomArrayRefs<'py> {
     b_factor_arr: Option<Bound<'py, PyAny>>,
 }
 
+/// One atom row decoded from the AtomArray, paired with the per-atom
+/// residue/chain context used to group atoms into residues.
+struct AtomArrayRow {
+    atom: Atom,
+    chain_id: u8,
+    res_name: [u8; 3],
+    res_num: i32,
+}
+
 /// Build a single `MoleculeEntity` from a group of atom indices.
 fn build_entity_from_indices(
     indices: &[usize],
@@ -74,35 +93,12 @@ fn build_entity_from_indices(
     arrays: &AtomArrayRefs<'_>,
     chain_mapper: &mut ChainIdMapper,
 ) -> PyResult<MoleculeEntity> {
-    let n = indices.len();
-    let mut atoms = Vec::with_capacity(n);
-    let mut entity_chain_ids = Vec::with_capacity(n);
-    let mut entity_res_names = Vec::with_capacity(n);
-    let mut res_nums = Vec::with_capacity(n);
-    let mut entity_atom_names = Vec::with_capacity(n);
-    let mut elems = Vec::with_capacity(n);
-
+    let mut rows = Vec::with_capacity(indices.len());
     for &i in indices {
-        atoms.push(extract_coords_atom(arrays, i)?);
-        entity_chain_ids.push(extract_chain_id(arrays, i, chain_mapper)?);
-        entity_res_names.push(extract_res_name(arrays, i)?);
-        res_nums.push(arrays.res_id_arr.get_item(i)?.extract()?);
-        let (an_bytes, elem) = extract_atom_name_and_element(arrays, i)?;
-        entity_atom_names.push(an_bytes);
-        elems.push(elem);
+        rows.push(read_atom_array_row(arrays, i, chain_mapper)?);
     }
 
-    let coords = Coords {
-        num_atoms: n,
-        atoms,
-        chain_ids: entity_chain_ids,
-        res_names: entity_res_names,
-        res_nums,
-        atom_names: entity_atom_names,
-        elements: elems,
-    };
-
-    let mut allocator = crate::entity::molecule::id::EntityIdAllocator::new();
+    let mut allocator = EntityIdAllocator::new();
     // Advance allocator to the output index so IDs are sequential across
     // entities.
     for _ in 0..output_idx {
@@ -110,16 +106,117 @@ fn build_entity_from_indices(
     }
     let id = allocator.allocate();
 
-    Ok(crate::ops::codec::coords_to_molecule_entity(
-        id, mol_type, &coords,
-    ))
+    Ok(build_entity(id, mol_type, rows))
 }
 
-/// Extract a single `CoordsAtom` from array index `i`.
-fn extract_coords_atom(
+fn build_entity(
+    id: EntityId,
+    mol_type: MoleculeType,
+    rows: Vec<AtomArrayRow>,
+) -> MoleculeEntity {
+    let pdb_chain_id = rows.first().map_or(b' ', |r| r.chain_id);
+
+    match mol_type {
+        MoleculeType::Protein => {
+            let (atoms, residues) = into_atoms_and_residues(rows);
+            MoleculeEntity::Protein(ProteinEntity::new(
+                id,
+                atoms,
+                residues,
+                pdb_chain_id,
+                None,
+            ))
+        }
+        MoleculeType::DNA | MoleculeType::RNA => {
+            let (atoms, residues) = into_atoms_and_residues(rows);
+            MoleculeEntity::NucleicAcid(NAEntity::new(
+                id,
+                mol_type,
+                atoms,
+                residues,
+                pdb_chain_id,
+                None,
+            ))
+        }
+        MoleculeType::Water | MoleculeType::Solvent => {
+            let residue_name = rows.first().map_or([b' '; 3], |r| r.res_name);
+            let mut seen = HashSet::new();
+            for row in &rows {
+                let _ = seen.insert((row.chain_id, row.res_num));
+            }
+            let molecule_count = seen.len();
+            let atoms = rows.into_iter().map(|r| r.atom).collect();
+            MoleculeEntity::Bulk(BulkEntity::new(
+                id,
+                mol_type,
+                atoms,
+                residue_name,
+                molecule_count,
+            ))
+        }
+        MoleculeType::Ligand
+        | MoleculeType::Ion
+        | MoleculeType::Cofactor
+        | MoleculeType::Lipid => {
+            let residue_name = rows.first().map_or([b' '; 3], |r| r.res_name);
+            let atoms = rows.into_iter().map(|r| r.atom).collect();
+            MoleculeEntity::SmallMolecule(SmallMoleculeEntity::new(
+                id,
+                mol_type,
+                atoms,
+                residue_name,
+            ))
+        }
+    }
+}
+
+fn into_atoms_and_residues(
+    rows: Vec<AtomArrayRow>,
+) -> (Vec<Atom>, Vec<Residue>) {
+    let mut atoms = Vec::with_capacity(rows.len());
+    let mut residues = Vec::new();
+    let mut current_res_num: Option<i32> = None;
+    let mut current_res_name: [u8; 3] = [b' '; 3];
+    let mut current_start = 0usize;
+
+    for row in rows {
+        let new_residue = current_res_num.is_none_or(|n| n != row.res_num);
+        if new_residue {
+            if let Some(rn) = current_res_num {
+                residues.push(Residue {
+                    name: current_res_name,
+                    label_seq_id: rn,
+                    auth_seq_id: None,
+                    auth_comp_id: None,
+                    ins_code: None,
+                    atom_range: current_start..atoms.len(),
+                });
+            }
+            current_start = atoms.len();
+            current_res_num = Some(row.res_num);
+            current_res_name = row.res_name;
+        }
+        atoms.push(row.atom);
+    }
+    if let Some(rn) = current_res_num {
+        residues.push(Residue {
+            name: current_res_name,
+            label_seq_id: rn,
+            auth_seq_id: None,
+            auth_comp_id: None,
+            ins_code: None,
+            atom_range: current_start..atoms.len(),
+        });
+    }
+
+    (atoms, residues)
+}
+
+fn read_atom_array_row(
     arrays: &AtomArrayRefs<'_>,
     i: usize,
-) -> PyResult<CoordsAtom> {
+    chain_mapper: &mut ChainIdMapper,
+) -> PyResult<AtomArrayRow> {
     let coord_i = arrays.coord.get_item(i)?;
     let x: f32 = coord_i.get_item(0)?.extract()?;
     let y: f32 = coord_i.get_item(1)?.extract()?;
@@ -131,7 +228,6 @@ fn extract_coords_atom(
         .and_then(|arr| arr.get_item(i).ok())
         .and_then(|v| v.extract().ok())
         .unwrap_or(1.0);
-
     let b_factor: f32 = arrays
         .b_factor_arr
         .as_ref()
@@ -139,12 +235,23 @@ fn extract_coords_atom(
         .and_then(|v| v.extract().ok())
         .unwrap_or(0.0);
 
-    Ok(CoordsAtom {
-        x,
-        y,
-        z,
-        occupancy,
-        b_factor,
+    let chain_id = extract_chain_id(arrays, i, chain_mapper)?;
+    let res_name = extract_res_name(arrays, i)?;
+    let res_num: i32 = arrays.res_id_arr.get_item(i)?.extract()?;
+    let (atom_name, element) = extract_atom_name_and_element(arrays, i)?;
+
+    Ok(AtomArrayRow {
+        atom: Atom {
+            position: Vec3::new(x, y, z),
+            occupancy,
+            b_factor,
+            element,
+            name: atom_name,
+            formal_charge: 0,
+        },
+        chain_id,
+        res_name,
+        res_num,
     })
 }
 
@@ -265,7 +372,7 @@ fn extract_array_refs<'py>(
 /// Collect unique values preserving first-appearance order.
 fn unique_in_order(ids: &[i32]) -> Vec<i32> {
     let mut order = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
     for &eid in ids {
         if seen.insert(eid) {
             order.push(eid);

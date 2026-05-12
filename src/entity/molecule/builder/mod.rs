@@ -13,10 +13,10 @@ use glam::Vec3;
 
 use super::atom::Atom;
 use super::bulk::BulkEntity;
+use super::chain::ChainIdMapper;
 use super::id::EntityIdAllocator;
 use super::{MoleculeEntity, MoleculeType};
 use crate::element::Element;
-use crate::ops::codec::ChainIdMapper;
 
 mod classify;
 

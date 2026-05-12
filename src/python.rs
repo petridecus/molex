@@ -1,10 +1,6 @@
 //! Python bindings for parsing structure files into ASSEM01 bytes and
-//! emitting PDB from ASSEM01 bytes.
-//!
-//! The legacy COORDS01-shaped helpers (`pdb_to_coords`, `coords_to_pdb`,
-//! etc.) were retired alongside the COORDS01 binary wire format. Use the
-//! `*_to_assembly_bytes` / `assembly_bytes_to_*` pair instead; the AtomArray
-//! interop in `adapters::atomworks` is unchanged.
+//! emitting PDB from ASSEM01 bytes. AtomArray interop lives in
+//! `adapters::atomworks`.
 
 use pyo3::prelude::*;
 
