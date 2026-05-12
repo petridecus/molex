@@ -1,6 +1,6 @@
-//! Entity → PDB-text emission. `ATOM` for polymer entities (with a
+//! Entity -> PDB-text emission. `ATOM` for polymer entities (with a
 //! closing `TER`), `HETATM` for non-polymer entities. Atom-name
-//! alignment follows wwPDB v3.3 §9.
+//! alignment follows wwPDB v3.3 section 9.
 
 use std::fmt::Write as _;
 
@@ -30,7 +30,7 @@ pub fn assembly_to_pdb(assembly: &Assembly) -> Result<String, AdapterError> {
 /// `ATOM` records are emitted for polymer entities (Protein, NucleicAcid)
 /// and a `TER` record closes each polymer chain. `HETATM` records are
 /// emitted for non-polymer entities (SmallMolecule, Bulk). Atom-name
-/// alignment follows wwPDB v3.3 §9: single-letter elements indent into
+/// alignment follows wwPDB v3.3 section 9: single-letter elements indent into
 /// col 14, two-letter or 4-char names start at col 13.
 ///
 /// # Errors
@@ -167,9 +167,9 @@ struct ResidueCtx {
     res_num: i32,
 }
 
-/// Format an atom name for the cols 13-16 field per wwPDB v3.3 §9.
+/// Format an atom name for the cols 13-16 field per wwPDB v3.3 section 9.
 ///
-/// Single-letter elements with ≤3-char names indent so the name starts
+/// Single-letter elements with <=3-char names indent so the name starts
 /// at col 14 (e.g. `" CA "`). Two-letter elements and 4-char names
 /// occupy all four cols left-justified (e.g. `"FE  "`, `"1HD1"`).
 pub(super) fn format_atom_name(name: [u8; 4], element: Element) -> [u8; 4] {

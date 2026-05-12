@@ -7,7 +7,7 @@ use std::ops::Range;
 /// Carries both the structural-side identifier (`label_seq_id`) and the
 /// optional author-side identifiers (`auth_seq_id`, `auth_comp_id`,
 /// `ins_code`) sourced from mmCIF / BinaryCIF. `None` on any author
-/// field means "fall back to the label-side value" — internal grouping
+/// field means "fall back to the label-side value". Internal grouping
 /// uses `label_*`, user-facing output uses `auth_*`.
 #[derive(Debug, Clone)]
 pub struct Residue {

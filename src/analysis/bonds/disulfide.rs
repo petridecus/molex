@@ -1,7 +1,7 @@
 //! Disulfide bond detection between cysteine residues.
 //!
 //! Detects Cys-Cys disulfide bridges by finding SG-SG atom pairs within
-//! the expected distance range (~2.05 Å).
+//! the expected distance range (~2.05 A).
 
 use std::borrow::Borrow;
 
@@ -15,12 +15,12 @@ const MAX_SS_DISTANCE: f32 = 2.5;
 /// Minimum SG-SG distance (angstroms) to avoid clashes.
 const MIN_SS_DISTANCE: f32 = 1.5;
 
-/// Detect disulfide (Cys SG–SG) bonds across a set of molecule entities.
+/// Detect disulfide (Cys SG-SG) bonds across a set of molecule entities.
 ///
 /// Scans every [`MoleculeEntity::Protein`] for atoms named `"SG"` in
 /// residues named `"CYS"`, then emits one [`CovalentBond`] for each
 /// pair (intra- or inter-entity) whose SG-SG distance falls within the
-/// 1.5–2.5 Å disulfide range.
+/// 1.5-2.5 A disulfide range.
 ///
 /// Endpoints use [`AtomId`] so bonds remain addressable after entities
 /// are reordered or recomposed.
@@ -145,9 +145,9 @@ mod tests {
     #[test]
     fn detect_disulfides_single_interchain_pair() {
         let (mut atoms_a, res_a) = cys_residue(Vec3::new(0.0, 0.0, 0.0));
-        // Chain B SG positioned ~2.03 Å from chain A SG.
+        // Chain B SG positioned ~2.03 A from chain A SG.
         // Chain A SG is at (1.0, -2.5, 0.0). Put chain B SG at
-        // (1.0, -4.53, 0.0) — distance 2.03.
+        // (1.0, -4.53, 0.0); distance 2.03.
         // For that, place chain B origin so that SG = (1.0, -4.53, 0.0);
         // SG offset is (1.0, -2.5, 0.0), so origin = (0.0, -2.03, 0.0).
         let (mut atoms_b, res_b) = cys_residue(Vec3::new(0.0, -2.03, 0.0));

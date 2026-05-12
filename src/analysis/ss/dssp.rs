@@ -490,7 +490,7 @@ mod tests {
         );
 
         // 76 residues: M1-G76. Ground truth from mkdssp 4.4.10 run on
-        // our exact 1ubq.cif, converted to Q3 (H,G,I→H; E,B→E; else→C).
+        // our exact 1ubq.cif, converted to Q3 (H,G,I->H; E,B->E; else->C).
         // DSSP8: -EEEEEETTS-EEEEE--TTSBHHHHHHHHHHHH---GGGEEEEETTEEPPTTSBTGGGTPPTT-EEEEEE--S--
         let expected =
             "CEEEEEECCCCEEEEECCCCCEHHHHHHHHHHHHCCCHHHEEEEECCEECCCCCECHHHCCCCCCEEEEEECCCCC";

@@ -30,7 +30,7 @@ pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
 
-// ── Entity-first public API ─────────────────────────────────────────────
+// -- Entity-first public API ---------------------------------------------
 // The most commonly used types, re-exported at the crate root.
 
 pub use analysis::{detect_disulfides, BondOrder, HBond, SSType};

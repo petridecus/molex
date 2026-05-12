@@ -2,7 +2,7 @@
 
 Structural analysis lives in `molex::analysis` (source: `src/analysis/`). Most analysis functions operate on entity-level types (`&[Atom]`, `&[ResidueBackbone]`, `&[MoleculeEntity]`).
 
-The eagerly-computed pipeline (DSSP secondary structure + backbone H-bonds + disulfides) is exposed through [`Assembly`](../architecture/overview.md) — see `Assembly::ss_types`, `Assembly::hbonds`, and `Assembly::disulfides`. The standalone functions documented below are the building blocks underneath.
+The eagerly-computed pipeline (DSSP secondary structure + backbone H-bonds + disulfides) is exposed through [`Assembly`](../architecture/overview.md); see `Assembly::ss_types`, `Assembly::hbonds`, and `Assembly::disulfides`. The standalone functions documented below are the building blocks underneath.
 
 ## Secondary structure (`analysis::ss`)
 
@@ -29,7 +29,7 @@ Each variant has a `.color()` method returning an RGB `[f32; 3]` for rendering.
 
 `analysis::merge_short_segments` converts isolated 1-residue helix/sheet runs to `Coil`.
 
-For most callers the recommended path is to construct an `Assembly` and read `assembly.ss_types(entity_id)` — the assembly internally runs H-bond detection and `classify` for every protein entity.
+For most callers the recommended path is to construct an `Assembly` and read `assembly.ss_types(entity_id)`. The assembly internally runs H-bond detection and `classify` for every protein entity.
 
 ## Bond detection (`analysis::bonds`)
 
@@ -68,7 +68,7 @@ use molex::{detect_disulfides, CovalentBond};
 let disulfides: Vec<CovalentBond> = detect_disulfides(&entities);
 ```
 
-Scans every protein entity for CYS SG atoms and emits one `CovalentBond` (with `AtomId` endpoints) per SG-SG pair within 1.5–2.5 Å. Also surfaced via `assembly.disulfides()`.
+Scans every protein entity for CYS SG atoms and emits one `CovalentBond` (with `AtomId` endpoints) per SG-SG pair within 1.5 to 2.5 angstroms. Also surfaced via `assembly.disulfides()`.
 
 ## Bounding box (`analysis::aabb`)
 

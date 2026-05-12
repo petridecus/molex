@@ -37,7 +37,7 @@ impl MsgVal {
 
     #[allow(
         clippy::cast_possible_wrap,
-        reason = "u64→i64 wrap is acceptable for msgpack values"
+        reason = "u64->i64 wrap is acceptable for msgpack values"
     )]
     pub(crate) fn as_i64(&self) -> Option<i64> {
         match self {
@@ -49,7 +49,7 @@ impl MsgVal {
 
     #[allow(
         clippy::cast_precision_loss,
-        reason = "precision loss is acceptable for i64/u64→f64 in molecular \
+        reason = "precision loss is acceptable for i64/u64->f64 in molecular \
                   data"
     )]
     pub(crate) fn as_f64(&self) -> Option<f64> {
@@ -390,7 +390,7 @@ fn decode_byte_array(
         )),
         #[allow(
             clippy::cast_possible_wrap,
-            reason = "u32→i32 wrap matches BinaryCIF spec for type 6"
+            reason = "u32->i32 wrap matches BinaryCIF spec for type 6"
         )]
         6 => Ok(ColData::IntArray(
             bytes

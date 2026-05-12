@@ -1,4 +1,4 @@
-//! Small molecule entity — a single non-polymer molecule (ligand, ion,
+//! Small molecule entity: a single non-polymer molecule (ligand, ion,
 //! cofactor, lipid).
 
 use super::atom::Atom;

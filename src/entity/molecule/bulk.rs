@@ -1,4 +1,4 @@
-//! Bulk entity — many identical small molecules (water, solvent).
+//! Bulk entity: many identical small molecules (water, solvent).
 
 use super::atom::Atom;
 use super::id::EntityId;

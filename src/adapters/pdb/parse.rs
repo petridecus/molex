@@ -4,7 +4,7 @@ use crate::element::Element;
 use crate::entity::molecule::{AtomRow, EntityBuilder, MoleculeEntity};
 use crate::ops::codec::AdapterError;
 
-/// Record-kind dispatch based on cols 1–6.
+/// Record-kind dispatch based on cols 1-6.
 #[derive(Clone, Copy)]
 enum RecordKind {
     Atom,
@@ -146,7 +146,7 @@ pub(super) fn parse_pdb_to_all_models(
     Ok(models)
 }
 
-/// Parse a `MODEL` record's serial-number field (cols 11–14).
+/// Parse a `MODEL` record's serial-number field (cols 11-14).
 fn parse_model_serial(bytes: &[u8]) -> i32 {
     let lo = 10.min(bytes.len());
     let hi = 14.min(bytes.len());
@@ -213,7 +213,7 @@ fn parse_i32_field(s: &[u8]) -> Option<i32> {
 ///
 /// Width-strict: the raw slice must be exactly `width` bytes, all
 /// alphanumeric ASCII, with at least one alphabetic character. Returns
-/// `None` for any other input — callers fall back to decimal parsing.
+/// `None` for any other input; callers fall back to decimal parsing.
 ///
 /// Per the Grosse-Kunstleve hybrid-36 spec: an uppercase first char
 /// encodes the upper-base-36 range starting at `10^width`; a lowercase
@@ -322,7 +322,7 @@ pub(super) fn parse_pdb_charge(raw: &[u8]) -> i8 {
     s.parse().unwrap_or(0)
 }
 
-/// Decode element from cols 77–78, falling back to atom-name inference.
+/// Decode element from cols 77-78, falling back to atom-name inference.
 fn resolve_element(bytes: &[u8], atom_name_str: &str) -> Element {
     let raw = col_slice(bytes, 77, 78);
     let trimmed = trim_ascii(raw);
@@ -341,10 +341,10 @@ fn resolve_element(bytes: &[u8], atom_name_str: &str) -> Element {
 
 /// Parse one `ATOM`/`HETATM` row.
 fn parse_atom_record(bytes: &[u8]) -> Result<AtomRow, AdapterError> {
-    // Require enough length to cover x/y/z (cols 31–54).
+    // Require enough length to cover x/y/z (cols 31-54).
     if bytes.len() < 54 {
         return Err(AdapterError::PdbParseError(format!(
-            "ATOM/HETATM row too short ({} bytes); need ≥54 for coordinates",
+            "ATOM/HETATM row too short ({} bytes); need >=54 for coordinates",
             bytes.len()
         )));
     }
@@ -377,7 +377,7 @@ fn parse_atom_record(bytes: &[u8]) -> Result<AtomRow, AdapterError> {
         std::str::from_utf8(trim_ascii(&label_atom_id)).unwrap_or("");
     let element = resolve_element(bytes, atom_name_str);
 
-    // Chain ID — single byte per PDB spec. Stored as `String` to keep the
+    // Chain ID: single byte per PDB spec. Stored as `String` to keep the
     // `AtomRow` shape uniform with mmCIF (multi-char chain IDs).
     let chain_str = std::str::from_utf8(&[chain_byte])
         .map_or_else(|_| " ".to_owned(), str::to_owned);

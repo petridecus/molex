@@ -1,4 +1,4 @@
-//! Tests for `EntityBuilder` — heuristic, hint, altloc, and error paths.
+//! Tests for `EntityBuilder`: heuristic, hint, altloc, and error paths.
 //!
 //! Author-side / metadata round-trip tests live in
 //! `super::roundtrip_tests`; this module exports the shared
@@ -174,7 +174,7 @@ impl RowBuilder {
 }
 
 /// Push a residue with the four standard protein backbone atoms in a
-/// straight 3.8 Å spacing along x — enough for `ProteinEntity::new` to
+/// straight 3.8 A spacing along x, enough for `ProteinEntity::new` to
 /// keep it.
 pub(super) fn push_protein_residue(
     b: &mut EntityBuilder,
@@ -297,7 +297,7 @@ fn pdb_path_modified_residue_without_backbone_stays_separate() {
     let mut b = EntityBuilder::new();
     push_protein_residue(&mut b, "A", 1, "ALA", 0.0, None);
     push_protein_residue(&mut b, "A", 2, "GLY", 3.8, None);
-    // SEP without backbone atoms — just a sidechain marker.
+    // SEP without backbone atoms: just a sidechain marker.
     b.push_atom(
         RowBuilder::new("A", 3, "SEP", "OG")
             .at(10.0, 0.0, 0.0)
@@ -453,7 +453,7 @@ fn hint_water_emits_single_bulk() {
 #[test]
 fn hint_unknown_falls_back_to_pdb_heuristic() {
     let mut b = EntityBuilder::new();
-    // No register_entity call → label_entity_id resolves to Unknown.
+    // No register_entity call -> label_entity_id resolves to Unknown.
     push_protein_residue(&mut b, "A", 1, "ALA", 0.0, Some("missing"));
     push_protein_residue(&mut b, "A", 2, "SEP", 3.8, Some("missing"));
     let entities = b.finish().unwrap();
@@ -590,7 +590,7 @@ fn altloc_same_atom_name_different_residues_is_independent() {
     push_protein_residue(&mut b, "A", 2, "ALA", 3.8, None);
     let entities = b.finish().unwrap();
     let protein = entities[0].as_protein().unwrap();
-    // 4 backbone atoms × 2 residues = 8 atoms total.
+    // 4 backbone atoms x 2 residues = 8 atoms total.
     assert_eq!(protein.atoms.len(), 8);
 }
 
@@ -639,7 +639,7 @@ fn insertion_codes_distinguish_residues() {
     )
     .unwrap();
     let entities = b.finish().unwrap();
-    // Both residues are GOL → Solvent → bulked into one BulkEntity
+    // Both residues are GOL -> Solvent -> bulked into one BulkEntity
     // with residue_count=2.
     assert_eq!(entities.len(), 1);
     let bulk = entities[0].as_bulk().unwrap();

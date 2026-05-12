@@ -1,7 +1,7 @@
 //! PDB format parsing and writing.
 //!
-//! The parser is a hand-rolled column-positional scanner per wwPDB v3.3 §9.
-//! Records other than `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER`, and
+//! The parser is a hand-rolled column-positional scanner per wwPDB v3.3 section
+//! 9. Records other than `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER`, and
 //! `END` are silently skipped.
 
 mod parse;

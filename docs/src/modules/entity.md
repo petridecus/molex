@@ -86,7 +86,7 @@ pub struct ProteinEntity {
 }
 ```
 
-Construction (`ProteinEntity::new`) reorders atoms into the canonical per-residue layout, drops residues missing any of N/CA/C/O (OXT counts as the C-terminal oxygen), computes segment breaks from C(i)->N(i+1) distance > 2.0 Å, and populates `bonds` from the `AminoAcid` chemistry tables plus universal backbone bonds (N-CA, CA-C, C=O) and inter-residue peptide bonds C(i)-N(i+1).
+Construction (`ProteinEntity::new`) reorders atoms into the canonical per-residue layout, drops residues missing any of N/CA/C/O (OXT counts as the C-terminal oxygen), computes segment breaks from C(i)->N(i+1) distance > 2.0 angstroms, and populates `bonds` from the `AminoAcid` chemistry tables plus universal backbone bonds (N-CA, CA-C, C=O) and inter-residue peptide bonds C(i)-N(i+1).
 
 Derived views (computed on each call, not cached):
 
@@ -100,7 +100,7 @@ Bond filters:
 
 ## NAEntity
 
-A single DNA or RNA chain. Same overall shape as `ProteinEntity` — atoms, residues, segment breaks, intra-entity `bonds`, `pdb_chain_id`, and `auth_asym_id: Option<u8>`. The DNA-vs-RNA discriminator is carried in an extra `na_type: MoleculeType` field. Implements `Entity` and `Polymer`.
+A single DNA or RNA chain. Same overall shape as `ProteinEntity`: atoms, residues, segment breaks, intra-entity `bonds`, `pdb_chain_id`, and `auth_asym_id: Option<u8>`. The DNA-vs-RNA discriminator is carried in an extra `na_type: MoleculeType` field. Implements `Entity` and `Polymer`.
 
 ## SmallMoleculeEntity
 

@@ -21,7 +21,7 @@ use crate::ops::codec::AdapterError;
 ///   - 1 byte: `molecule_type` wire byte
 ///   - 4 bytes: `atom_count` (`u32` BE)
 /// - Per atom (26 bytes):
-///   - 12 bytes: x, y, z (`f32` BE × 3)
+///   - 12 bytes: x, y, z (`f32` BE x 3)
 ///   - 1 byte:   `chain_id`
 ///   - 3 bytes:  `res_name`
 ///   - 4 bytes:  `res_num` (`i32` BE)

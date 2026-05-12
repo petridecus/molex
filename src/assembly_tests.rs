@@ -261,7 +261,7 @@ fn update_positions_length_mismatch_is_a_no_op() {
     let mut assembly = Assembly::new(vec![entity]);
     let before = assembly.generation();
 
-    // Too few coords — must be rejected without bumping generation.
+    // Too few coords: must be rejected without bumping generation.
     assembly.update_positions(id, &[Vec3::ZERO]);
     assert_eq!(assembly.generation(), before);
 }
@@ -296,7 +296,7 @@ fn mutation_result_matches_fresh_build() {
 #[test]
 fn disulfides_filtered_and_cross_bonds_populated() {
     let mut alloc = EntityIdAllocator::new();
-    // Two cysteine entities with SGs at ~2.03 Å separation.
+    // Two cysteine entities with SGs at ~2.03 A separation.
     let sg_a = Vec3::new(0.0, 0.0, 0.0);
     let sg_b = Vec3::new(2.03, 0.0, 0.0);
     let ca = cys_residue_with_sg(&mut alloc, b'A', sg_a);

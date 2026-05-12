@@ -1,4 +1,4 @@
-//! Classification dispatch — picks an entity kind for each chain and
+//! Classification dispatch: picks an entity kind for each chain and
 //! emits one or more `MoleculeEntity` values into the `ChainCtx`.
 
 use super::{
@@ -286,7 +286,7 @@ fn trim_res_name(name: &[u8; 3]) -> &str {
     std::str::from_utf8(name).unwrap_or("").trim()
 }
 
-/// True if the residue has PDB-style N, CA, and C atoms — the trigger
+/// True if the residue has PDB-style N, CA, and C atoms; the trigger
 /// for modified-residue merging into a Protein chain.
 fn residue_has_protein_backbone(residue: &ResidueAccum) -> bool {
     let mut has_n = false;

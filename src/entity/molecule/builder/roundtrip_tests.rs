@@ -1,6 +1,6 @@
 //! Round-trip tests proving that `auth_asym_id`, `auth_seq_id`,
 //! `auth_comp_id`, `auth_atom_id`, `ins_code`, and `formal_charge`
-//! survive the `AtomRow` → builder → entity-type-constructor →
+//! survive the `AtomRow` -> builder -> entity-type-constructor ->
 //! `Vec<MoleculeEntity>` path. `None` on an auth-side row column
 //! propagates as `None` on the output (the "default to label" rule is
 //! applied downstream at read time).
@@ -155,7 +155,7 @@ fn auth_none_defaults_to_label() {
     let protein = entities[0].as_protein().unwrap();
     assert_eq!(
         protein.auth_asym_id, None,
-        "no auth chain string → entity carries None",
+        "no auth chain string -> entity carries None",
     );
     let residue = &protein.residues[0];
     assert_eq!(residue.auth_seq_id, None);
@@ -172,8 +172,8 @@ fn auth_none_defaults_to_label() {
 #[test]
 fn auth_asym_id_equal_to_label_collapses_to_none() {
     let mut b = EntityBuilder::new();
-    // auth_asym_id explicitly set but identical to label — entity should
-    // not allocate a second byte; auth_asym_id stays None.
+    // auth_asym_id explicitly set but identical to label; entity should
+    // not allocate a second byte and auth_asym_id stays None.
     push_protein_residue_with(&mut b, "A", 1, "ALA", 0.0, |r| {
         r.auth_chain("A")
     });

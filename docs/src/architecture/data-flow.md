@@ -17,20 +17,20 @@
                   └──┬────────┬────────┬──┘
                      │        │        │
                      v        v        v
-              ┌──────────┐ ┌──────────┐ ┌──────────┐
-              │ Analysis │ │Transform │ │   Wire   │
-              │          │ │          │ │          │
-              │ dssp     │ │ kabsch   │ │ ASSEM01  │
-              │ bonds    │ │ align    │ │ serialize│
-              │ disulfide│ │ extract  │ │   /      │
+              ┌──────────┐ ┌──────────┐ ┌───────────┐
+              │ Analysis │ │Transform │ │   Wire    │
+              │          │ │          │ │           │
+              │ dssp     │ │ kabsch   │ │ ASSEM01   │
+              │ bonds    │ │ align    │ │ serialize │
+              │ disulfide│ │ extract  │ │    /      │
               │ aabb     │ │   ca     │ │deserialize│
-              └──────────┘ └──────────┘ └────┬─────┘
-                                             │
-                                             v
-                                    FFI / IPC / Python
+              └──────────┘ └──────────┘ └─────┬─────┘
+                                              │
+                                              v
+                                     FFI / IPC / Python
 ```
 
-Analysis, Transform, and Wire are independent — use any combination depending on what you need.
+Analysis, Transform, and Wire are independent; use any combination depending on what you need.
 
 ## 1. Parsing
 

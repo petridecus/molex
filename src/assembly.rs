@@ -23,7 +23,7 @@ use crate::entity::molecule::MoleculeEntity;
 /// Top-level container of entities plus eagerly-computed derived data.
 ///
 /// Each entity is stored behind an `Arc`, so cloning an `Assembly` is
-/// O(entities) of refcount bumps — independent of the total atom count.
+/// O(entities) of refcount bumps, independent of the total atom count.
 /// Mutations clone only the touched entity (`Arc::make_mut`) and leave
 /// the rest aliased with prior snapshots. Derived data (`ss_types`,
 /// `hbonds`) is also `Arc`-shared so snapshots that didn't trigger a
@@ -108,7 +108,7 @@ impl Assembly {
         this
     }
 
-    // ── Read accessors ──────────────────────────────────────────────
+    // -- Read accessors ----------------------------------------------
 
     /// All entities in declaration order.
     ///
@@ -191,7 +191,7 @@ impl Assembly {
         intra.chain(cross)
     }
 
-    /// Cross-entity disulfide bonds — pairs where both endpoints
+    /// Cross-entity disulfide bonds: pairs where both endpoints
     /// resolve to an SG atom inside a CYS residue.
     pub fn disulfides(&self) -> impl Iterator<Item = &CovalentBond> + '_ {
         self.cross_entity_bonds
@@ -199,7 +199,7 @@ impl Assembly {
             .filter(|b| self.is_cys_sg(b.a) && self.is_cys_sg(b.b))
     }
 
-    // ── Mutation methods ────────────────────────────────────────────
+    // -- Mutation methods --------------------------------------------
 
     /// Append an entity. Bumps the generation counter and recomputes
     /// all derived data.
@@ -211,7 +211,7 @@ impl Assembly {
     /// Replace an entity in place, preserving its position in the
     /// internal vec. `entity.id()` must equal `id`. If `id` is not
     /// present, the mutation is logged and skipped (generation not
-    /// advanced) — readers keep seeing the previous snapshot. Use
+    /// advanced); readers keep seeing the previous snapshot. Use
     /// this rather than `remove_entity` + `add_entity` whenever the
     /// goal is to swap a single entity's body without disturbing the
     /// vec ordering of the rest.
@@ -241,7 +241,7 @@ impl Assembly {
     /// Replace the positions of a single entity. If `coords.len()` does
     /// not match the entity's atom count, the mutation is abandoned
     /// (logged at error level) and the generation counter is not
-    /// advanced — readers keep seeing the previous snapshot.
+    /// advanced; readers keep seeing the previous snapshot.
     pub fn update_positions(&mut self, entity: EntityId, coords: &[Vec3]) {
         let Some(idx) = self.entities.iter().position(|e| e.id() == entity)
         else {
@@ -276,10 +276,9 @@ impl Assembly {
     /// regardless of how many entities were touched.
     #[allow(
         clippy::needless_pass_by_value,
-        reason = "phase_3.md locks this signature — `snapshot` is the \
-                  one-shot \"apply this whole-assembly snapshot\" input; \
-                  callers hand over ownership rather than keeping the \
-                  snapshot alive."
+        reason = "phase_3.md locks this signature; `snapshot` is the one-shot \
+                  \"apply this whole-assembly snapshot\" input; callers hand \
+                  over ownership rather than keeping the snapshot alive."
     )]
     pub fn set_coordinate_snapshot(&mut self, snapshot: CoordinateSnapshot) {
         for entity in &mut self.entities {
@@ -305,7 +304,7 @@ impl Assembly {
         self.after_mutation();
     }
 
-    // ── Internal helpers ────────────────────────────────────────────
+    // -- Internal helpers --------------------------------------------
 
     fn after_mutation(&mut self) {
         self.generation = self.generation.saturating_add(1);

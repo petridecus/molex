@@ -1,4 +1,4 @@
-//! Nucleic acid entity — a single DNA or RNA chain instance.
+//! Nucleic acid entity: a single DNA or RNA chain instance.
 
 use std::collections::HashMap;
 
@@ -140,7 +140,7 @@ impl NAEntity {
     }
 
     /// Extract phosphorus (P) atom positions, split into segments at
-    /// gaps where consecutive P-P distance exceeds ~8 Å.
+    /// gaps where consecutive P-P distance exceeds ~8 A.
     #[must_use]
     #[allow(
         clippy::excessive_nesting,
@@ -246,13 +246,13 @@ impl NAEntity {
     }
 }
 
-/// Maximum P→P distance (Å) for consecutive nucleotides. Gaps exceeding
+/// Maximum P->P distance (A) for consecutive nucleotides. Gaps exceeding
 /// this indicate a backbone break.
 const MAX_PHOSPHATE_BOND_DIST: f32 = 8.0;
 
-/// Compute segment break indices from P(i)→P(i+1) distances.
+/// Compute segment break indices from P(i)->P(i+1) distances.
 ///
-/// Relies on canonical atom ordering — kept residues have `P` at
+/// Relies on canonical atom ordering: kept residues have `P` at
 /// local offset 0.
 fn compute_na_segment_breaks(
     atoms: &[Atom],
@@ -361,7 +361,7 @@ fn canonicalize_na_residues(
         } else {
             let res_name = std::str::from_utf8(&residue.name).unwrap_or("???");
             log::warn!(
-                "NAEntity chain '{}': dropping residue {} (name {}) — missing \
+                "NAEntity chain '{}': dropping residue {} (name {}); missing \
                  backbone atoms (need P, O5', C5', C4', C3', O3')",
                 pdb_chain_id as char,
                 residue.label_seq_id,
@@ -413,7 +413,7 @@ fn emit_na_residue_bonds(
             });
         }
     }
-    // Phosphate terminal oxygens (OP1 / OP2 / OP3) — emit only when
+    // Phosphate terminal oxygens (OP1 / OP2 / OP3): emit only when
     // present. Not part of Nucleotide::bonds() because their PDB
     // presence is variable (5' terminus, deprotonated forms).
     let phosphate_idx = r.atom_range.start; // canonical P
@@ -534,7 +534,7 @@ mod tests {
             atom_with("O5'", Element::O, 6.0), // backbone position 1
             atom_with("C3'", Element::C, 7.0), // backbone position 4
             atom_with("H8", Element::H, 8.0),  // hydrogen
-            atom_with("O4'", Element::O, 9.0), /* base (but really sugar) —
+            atom_with("O4'", Element::O, 9.0), /* base (but really sugar);
                                                 * treated as non-backbone */
             atom_with("C1'", Element::C, 10.0), // non-backbone heavy
         ];

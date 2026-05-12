@@ -2,11 +2,11 @@
 
 /// Packed PDB-style atom name (4 bytes, NUL-padded on the right).
 ///
-/// PDB atom names are 1–4 ASCII characters (`"N"`, `"CA"`, `"OD1"`,
+/// PDB atom names are 1-4 ASCII characters (`"N"`, `"CA"`, `"OD1"`,
 /// `"HG21"`). Storing them as `[u8; 4]` enables integer-comparison
 /// matching in hot paths and keeps the type `Copy` + `Hash`-friendly.
 ///
-/// The packing convention is **NUL-padded on the right** — distinct
+/// The packing convention is **NUL-padded on the right**, distinct
 /// from the PDB column convention of space-padding. Use
 /// [`AtomName::from_bytes`] to construct from a slice; it strips
 /// trailing padding internally for you only if the slice itself

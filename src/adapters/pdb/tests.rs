@@ -157,7 +157,7 @@ fn decode_hybrid36_serial_decimal_boundary() {
     assert_eq!(decode_hybrid36_serial(b"A000"), None);
     // Non-alphanumeric.
     assert_eq!(decode_hybrid36_serial(b"A0 00"), None);
-    // Pure decimal — caller's responsibility, helper rejects it.
+    // Pure decimal: caller's responsibility, helper rejects it.
     assert_eq!(decode_hybrid36_serial(b"12345"), None);
 }
 
@@ -174,13 +174,13 @@ fn decode_hybrid36_resseq_decimal_boundary() {
 
 #[test]
 fn parse_seq_field_per_column_decimal_vs_hybrid() {
-    // Decimal with leading space — falls to plain int parse.
+    // Decimal with leading space: falls to plain int parse.
     assert_eq!(parse_seq_field(b" 184", 4), Some(184));
-    // All decimal digits, exactly width chars — decimal.
+    // All decimal digits, exactly width chars: decimal.
     assert_eq!(parse_seq_field(b"9999", 4), Some(9999));
     // Hybrid-36 detected (exact width, all alphanumeric, has letter).
     assert_eq!(parse_seq_field(b"A000", 4), Some(10_000));
-    // Has a non-alphanumeric char → not hybrid; decimal parse of
+    // Has a non-alphanumeric char -> not hybrid; decimal parse of
     // signed integer still works.
     assert_eq!(parse_seq_field(b"-184", 4), Some(-184));
 }

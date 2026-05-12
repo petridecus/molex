@@ -498,7 +498,7 @@ fn trim_atom_name(name: [u8; 4]) -> String {
 /// Resolve a chain's `auth_asym_id` to a printable byte.
 ///
 /// Returns `None` when the auth string matches the label key (the
-/// common case — no extra mapper entry needed) or when no auth string
+/// common case, no extra mapper entry needed) or when no auth string
 /// was supplied. Otherwise allocates a fresh byte in the mapper to
 /// disambiguate it from the label-side chain byte.
 fn resolve_auth_chain_byte(

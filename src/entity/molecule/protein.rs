@@ -40,7 +40,7 @@ pub struct ResidueBackbone {
 ///
 /// `Vec<Atom>` holds the atoms (positions + names + elements). Bond
 /// indices are local to this sidechain's `Vec<Atom>` (0-based). The
-/// backbone-to-sidechain bond (CA→CB) is implicit — `ResidueBackbone.ca`
+/// backbone-to-sidechain bond (CA->CB) is implicit: `ResidueBackbone.ca`
 /// connects to the first atom in `atoms` when the sidechain is non-empty.
 #[derive(Debug, Clone)]
 pub struct Sidechain {
@@ -81,7 +81,7 @@ impl Sidechain {
 /// (backbone gaps from missing residues, detected by C-N distance).
 ///
 /// Protein-specific derived views (`to_backbone`) are available as methods.
-/// These derive from the underlying `atoms` + `residues` on each call — no
+/// These derive from the underlying `atoms` + `residues` on each call; no
 /// cached copies.
 #[derive(Debug, Clone)]
 pub struct ProteinEntity {
@@ -99,7 +99,7 @@ pub struct ProteinEntity {
     /// dropped during construction.
     pub residues: Vec<Residue>,
     /// Indices into `residues` where backbone segments start a new
-    /// continuous run. Computed from C(i)->N(i+1) distance > 2.0Å.
+    /// continuous run. Computed from C(i)->N(i+1) distance > 2.0A.
     pub segment_breaks: Vec<usize>,
     /// Intra-entity covalent bonds with `AtomId` endpoints. Populated at
     /// construction from `AminoAcid::bonds()` tables (intra-residue) plus
@@ -161,7 +161,7 @@ impl ProteinEntity {
     }
 
     /// Construct a protein entity assuming a single continuous chain
-    /// with no segment breaks — bypasses the C(i)→N(i+1) distance-based
+    /// with no segment breaks; bypasses the C(i)->N(i+1) distance-based
     /// segment-break detection used by [`Self::new`].
     ///
     /// Useful for synthetic backbones where positions don't yet reflect
@@ -406,7 +406,7 @@ fn canonicalize_protein_residues(
         } else {
             let res_name = std::str::from_utf8(&residue.name).unwrap_or("???");
             log::warn!(
-                "ProteinEntity chain '{}': dropping residue {} (name {}) — \
+                "ProteinEntity chain '{}': dropping residue {} (name {}); \
                  missing backbone atoms (need N, CA, C, and O or OXT)",
                 pdb_chain_id as char,
                 residue.label_seq_id,
@@ -545,7 +545,7 @@ pub(crate) fn trimmed_atom_name(name: &[u8; 4]) -> &[u8] {
 
 /// Compute segment break indices from C(i)->N(i+1) distances.
 ///
-/// Relies on canonical atom ordering — kept residues have `C` at local
+/// Relies on canonical atom ordering: kept residues have `C` at local
 /// offset 2 and `N` at offset 0.
 fn compute_segment_breaks(residues: &[Residue], atoms: &[Atom]) -> Vec<usize> {
     let mut breaks = Vec::new();

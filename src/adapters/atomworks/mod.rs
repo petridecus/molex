@@ -21,14 +21,14 @@
 //! import molex
 //! from atomworks.io.parser import parse as aw_parse
 //!
-//! # ── molex → AtomWorks (for model inference) ──
+//! # -- molex -> AtomWorks (for model inference) --
 //! atom_array = molex.entities_to_atom_array(assembly_bytes)
 //! atom_array_plus = molex.entities_to_atom_array_plus(assembly_bytes)
 //!
-//! # ── AtomArray → molex (after model prediction) ──
+//! # -- AtomArray -> molex (after model prediction) --
 //! assembly_bytes = molex.atom_array_to_entities(atom_array)
 //!
-//! # ── Full AtomWorks cleaning pipeline ──
+//! # -- Full AtomWorks cleaning pipeline --
 //! atom_array = molex.entities_to_atom_array_parsed(assembly_bytes, "3nez.cif.gz")
 //! ```
 
@@ -50,7 +50,7 @@ pub use to_array::{
 use crate::entity::molecule::MoleculeType;
 
 // ============================================================================
-// Molecule type ↔ AtomWorks chain type mapping
+// Molecule type <-> AtomWorks chain type mapping
 // ============================================================================
 
 /// AtomWorks `ChainType` enum values (from `atomworks.enums.ChainType`).

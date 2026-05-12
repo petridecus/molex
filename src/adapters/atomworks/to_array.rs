@@ -1,4 +1,4 @@
-//! Entities → AtomArray conversion direction.
+//! Entities -> AtomArray conversion direction.
 //!
 //! Contains `collect_atom_data`, `entities_to_atom_array_impl`, and all the
 //! `entities_to_*` pyfunction wrappers.

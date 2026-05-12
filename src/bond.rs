@@ -10,7 +10,7 @@ use crate::atom_id::AtomId;
 
 /// A covalent bond between two atoms.
 ///
-/// Endpoints are unordered — `CovalentBond { a, b, .. }` and
+/// Endpoints are unordered: `CovalentBond { a, b, .. }` and
 /// `CovalentBond { a: b, b: a, .. }` are not `==`-equal but represent
 /// the same chemistry. Consumers that need canonical ordering should
 /// sort the endpoints themselves.

@@ -1,4 +1,4 @@
-//! Atom-site column resolution and row → `AtomRow` decoding used by
+//! Atom-site column resolution and row -> `AtomRow` decoding used by
 //! the streaming fast path.
 
 use super::refuse::too_many_chains_error;

@@ -1,4 +1,4 @@
-//! AtomArray → entities conversion direction.
+//! AtomArray -> entities conversion direction.
 //!
 //! Contains `determine_entity_ids`, `build_entity_from_indices`,
 //! `atom_array_to_entities`, `atom_array_to_entity_vec`, and the
@@ -503,8 +503,8 @@ pub fn parse_file_to_entities(
 ///
 /// Returns a Python dict with:
 /// - `"assembly_bytes"`: ASSEM01 bytes for the entity assembly
-/// - `"chain_info"`: dict of chain_id → { "sequence": str, ... }
-/// - `"assemblies"`: dict of assembly_id → ASSEM01 bytes for each bio assembly
+/// - `"chain_info"`: dict of chain_id -> { "sequence": str, ... }
+/// - `"assemblies"`: dict of assembly_id -> ASSEM01 bytes for each bio assembly
 ///
 /// # Errors
 ///

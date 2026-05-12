@@ -1,6 +1,6 @@
 # Wire Format
 
-`molex::ops::wire` is the home of the ASSEM01 binary wire format —
+`molex::ops::wire` is the home of the ASSEM01 binary wire format:
 the on-disk / IPC format used to round-trip an `Assembly` through
 bytes.
 
@@ -37,7 +37,7 @@ Per entity header (5 bytes each):
   1 byte:  molecule_type wire byte
   4 bytes: atom_count (u32 BE)
 Per atom (26 bytes):
-  12 bytes: x, y, z (f32 BE × 3)
+  12 bytes: x, y, z (f32 BE x 3)
   1 byte:   chain_id
   3 bytes:  res_name
   4 bytes:  res_num (i32 BE)

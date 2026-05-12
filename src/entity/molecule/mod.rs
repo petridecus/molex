@@ -339,7 +339,7 @@ mod tests {
     }
 
     /// Build a 2-residue protein (ALA-GLY) on chain A with backbone atoms
-    /// at known positions. The C->N gap between residues exceeds 2 Å so a
+    /// at known positions. The C->N gap between residues exceeds 2 A so a
     /// segment break falls between them.
     fn two_residue_protein() -> MoleculeEntity {
         let atoms = vec![

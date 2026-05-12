@@ -47,7 +47,7 @@ fn build_protein(atoms: Vec<Atom>, residues: Vec<Residue>) -> ProteinEntity {
     ProteinEntity::new(id, atoms, residues, b'A', None)
 }
 
-/// Two ALA-GLY residues with a 10 Å C→N gap between them (segment break).
+/// Two ALA-GLY residues with a 10 A C->N gap between them (segment break).
 fn two_residue_protein_with_break() -> ProteinEntity {
     let atoms = vec![
         atom_at("N", Element::N, 1.0, 2.0, 3.0),
@@ -214,7 +214,7 @@ fn canonical_ordering_reorders_scrambled_input() {
 
 #[test]
 fn canonical_ordering_drops_residue_missing_backbone() {
-    // GLY has only N, CA, C (missing O) — must be dropped.
+    // GLY has only N, CA, C (missing O); must be dropped.
     let atoms = vec![
         atom_at("N", Element::N, 0.0, 0.0, 0.0),
         atom_at("CA", Element::C, 1.0, 0.0, 0.0),
@@ -297,7 +297,7 @@ fn peptide_bond_connects_consecutive_residues() {
 #[test]
 fn dropped_residue_emits_log_warning() {
     testing_logger::setup();
-    // ALA residue missing CA — must be dropped and logged.
+    // ALA residue missing CA; must be dropped and logged.
     let atoms = vec![
         atom_at("N", Element::N, 0.0, 0.0, 0.0),
         atom_at("C", Element::C, 1.5, 0.0, 0.0),
@@ -336,6 +336,6 @@ fn peptide_bond_skipped_across_segment_break() {
     ];
     let residues = vec![residue("ALA", 1, 0..4), residue("ALA", 2, 4..8)];
     let protein = build_protein(atoms, residues);
-    // No peptide bond — just 3 backbone per residue = 6.
+    // No peptide bond; just 3 backbone per residue = 6.
     assert_eq!(protein.backbone_bonds().count(), 6);
 }

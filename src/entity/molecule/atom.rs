@@ -1,4 +1,4 @@
-//! Core atom type — position and chemistry.
+//! Core atom type: position and chemistry.
 
 use glam::Vec3;
 

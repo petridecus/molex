@@ -6,7 +6,7 @@ Every structure parser feeds parser-emitted atom rows into the shared `EntityBui
 
 ## PDB (`adapters::pdb`)
 
-Hand-rolled column-positional scanner over wwPDB v3.3 §9. Records other than `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER`, and `END` are skipped.
+Hand-rolled column-positional scanner over wwPDB v3.3 section 9. Records other than `ATOM`, `HETATM`, `MODEL`, `ENDMDL`, `TER`, and `END` are skipped.
 
 ```rust,ignore
 pdb_file_to_entities(path: &Path) -> Result<Vec<MoleculeEntity>, AdapterError>

@@ -219,7 +219,7 @@ enum RowOutcome {
     Row(Vec<String>),
     /// The loop ended cleanly at this position.
     End,
-    /// An unhandled construct mid-row — caller bails to DOM.
+    /// An unhandled construct mid-row; caller bails to DOM.
     Bail,
 }
 

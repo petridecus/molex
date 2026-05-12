@@ -556,7 +556,7 @@ fn optional_strings(
 }
 
 /// All strings for a category column with mask honoured; masked rows
-/// become `None`. Used by `_entity` and `_entity_poly` pre-pass — these
+/// become `None`. Used by `_entity` and `_entity_poly` pre-pass; these
 /// don't have a coordinate-mask analogue, so the mask just collapses
 /// individual cells.
 fn strings_with_mask(
@@ -646,7 +646,7 @@ fn check_len<T>(
     }
 }
 
-/// Decode a column's optional `mask` array (BCIF v0.3.0 §5).
+/// Decode a column's optional `mask` array (BCIF v0.3.0 section 5).
 ///
 /// The mask is itself an encoded-data node with int values 0 (present),
 /// 1 (`.`), or 2 (`?`). Returns `Ok(None)` when no mask is attached.

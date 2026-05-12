@@ -63,7 +63,7 @@ pub struct CoordinateData {
 
 /// How the observed data was originally stored in the SF-CIF file.
 ///
-/// Structure factor amplitudes (F) and intensities (I) are related by I = F².
+/// Structure factor amplitudes (F) and intensities (I) are related by I = F^2.
 /// The parser always converts to amplitudes in [`Reflection::f_meas`], but this
 /// tag records what was actually present in the file so downstream code can
 /// audit the provenance.
@@ -71,8 +71,8 @@ pub struct CoordinateData {
 pub enum ObsDataType {
     /// Amplitudes (F) were present in the file. No conversion needed.
     Amplitude,
-    /// Intensities (I) were present and converted via F = √I, σ_F = σ_I /
-    /// (2√I).
+    /// Intensities (I) were present and converted via F = sqrtI, sigma_F =
+    /// sigma_I / (2sqrtI).
     Intensity,
 }
 
@@ -92,7 +92,7 @@ pub struct Reflection {
     pub l: i32,
     /// Measured structure factor amplitude (always F, even if the file had I).
     pub f_meas: Option<f64>,
-    /// Standard uncertainty of measured amplitude (always σ_F).
+    /// Standard uncertainty of measured amplitude (always sigma_F).
     pub sigma_f_meas: Option<f64>,
     /// Calculated structure factor amplitude.
     pub f_calc: Option<f64>,
@@ -355,13 +355,13 @@ impl TryFrom<&Block> for ReflectionData {
             .columns(&["_refln.index_h", "_refln.index_k", "_refln.index_l"])
             .ok_or_else(|| ExtractionError::MissingCategory("_refln".into()))?;
 
-        // ── Observed data: try amplitudes first, fall back to intensities ──
+        // -- Observed data: try amplitudes first, fall back to intensities --
         //
         // Amplitude columns (F):
         //   _refln.F_meas_au  /  _refln.F_meas_sigma_au   (modern mmCIF)
         //   _refln.F_obs      /  _refln.F_obs_sigma        (older convention)
         //
-        // Intensity columns (I = F²):
+        // Intensity columns (I = F^2):
         //   _refln.intensity_meas  /  _refln.intensity_sigma   (modern)
         //   _refln.I_obs           /  _refln.I_obs_sigma       (older)
 
@@ -397,7 +397,7 @@ impl TryFrom<&Block> for ReflectionData {
             (amp_col, amp_sigma_col)
         };
 
-        // ── Calculated structure factors ──
+        // -- Calculated structure factors --
         let f_calc = first_available_column(
             block,
             &["_refln.F_calc_au", "_refln.F_calc"],
@@ -405,7 +405,7 @@ impl TryFrom<&Block> for ReflectionData {
         let phase: Option<Vec<_>> =
             block.column("_refln.phase_calc").map(Iterator::collect);
 
-        // ── R-free flags ──
+        // -- R-free flags --
         // Try modern pdbx_r_free_flag (integer) first, then legacy status
         // (char).
         let rfree_int: Option<Vec<_>> = block
@@ -427,7 +427,7 @@ impl TryFrom<&Block> for ReflectionData {
                 .and_then(|v| v.get(i))
                 .and_then(|v| v.as_f64());
 
-            // Convert intensities → amplitudes if needed.
+            // Convert intensities -> amplitudes if needed.
             let (f_meas, sigma_f_meas) = if use_intensities {
                 intensity_to_amplitude(raw_obs, raw_sigma)
             } else {
@@ -493,9 +493,11 @@ fn extract_free_flag(
     false
 }
 
-/// Convert intensity (I) and its uncertainty (σ_I) to amplitude (F) and σ_F.
+/// Convert intensity (I) and its uncertainty (sigma_I) to amplitude (F) and
+/// sigma_F.
 ///
-/// `F = √I` and `σ_F = σ_I / (2√I)` (first-order error propagation).
+/// `F = sqrtI` and `sigma_F = sigma_I / (2sqrtI)` (first-order error
+/// propagation).
 ///
 /// Negative or zero intensities yield `None` since F is undefined.
 fn intensity_to_amplitude(
