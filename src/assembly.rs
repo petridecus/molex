@@ -58,8 +58,10 @@ impl CoordinateSnapshot {
     /// Capture the current positions of every entity in an `Assembly`.
     ///
     /// Intended for "reset to original" flows: take a snapshot after
-    /// load, run mutations, then pass the snapshot back to
-    /// [`Assembly::set_coordinate_snapshot`] to restore.
+    /// load, run mutations, then replay each entity's coords back via
+    /// [`Assembly::apply_edits`] with one
+    /// [`AssemblyEdit::SetEntityCoords`](crate::ops::edit::AssemblyEdit::SetEntityCoords)
+    /// per entry to restore.
     #[must_use]
     pub fn from_assembly(assembly: &Assembly) -> Self {
         let per_entity = assembly
@@ -224,7 +226,11 @@ impl Assembly {
     /// goal is to swap a single entity's body without disturbing the
     /// vec ordering of the rest.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn replace_entity(&mut self, id: EntityId, entity: MoleculeEntity) {
+    pub(crate) fn replace_entity(
+        &mut self,
+        id: EntityId,
+        entity: MoleculeEntity,
+    ) {
         debug_assert_eq!(
             entity.id(),
             id,
@@ -252,7 +258,11 @@ impl Assembly {
     /// (logged at error level) and the generation counter is not
     /// advanced; readers keep seeing the previous snapshot.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn update_positions(&mut self, entity: EntityId, coords: &[Vec3]) {
+    pub(crate) fn update_positions(
+        &mut self,
+        entity: EntityId,
+        coords: &[Vec3],
+    ) {
         let Some(idx) = self.entities.iter().position(|e| e.id() == entity)
         else {
             log::error!(
@@ -291,7 +301,10 @@ impl Assembly {
                   over ownership rather than keeping the snapshot alive."
     )]
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn set_coordinate_snapshot(&mut self, snapshot: CoordinateSnapshot) {
+    pub(crate) fn set_coordinate_snapshot(
+        &mut self,
+        snapshot: CoordinateSnapshot,
+    ) {
         for entity in &mut self.entities {
             let entity_id = entity.id();
             let Some(coords) = snapshot.per_entity.get(&entity_id) else {
