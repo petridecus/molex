@@ -301,6 +301,249 @@ impl PyEditList {
         let inner = deserialize_edits(&bytes).map_err(value_err)?;
         Ok(Self { inner })
     }
+
+    // ---------------------------------------------------------------
+    // Read accessors (parallels `molex_edits_*_at` C entry points and
+    // `molex::EditList::view_at` in C++).
+    //
+    // Python doesn't have the borrowed-pointer / sibling-free
+    // lifecycle the C side does -- pyo3 copies edit fields into
+    // freshly-allocated Python objects, which the Python GC owns.
+    // ---------------------------------------------------------------
+
+    /// Kind of the edit at `index`. Returns one of the
+    /// `EditKind.*` integer constants exposed at module scope.
+    ///
+    /// # Errors
+    ///
+    /// `PyIndexError` when `index >= len(self)`.
+    pub fn kind_at(&self, index: usize) -> PyResult<i32> {
+        let edit = self.inner.get(index).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                "EditList.kind_at: index {index} out of range (len={})",
+                self.inner.len()
+            ))
+        })?;
+        Ok(edit_kind_int(edit))
+    }
+
+    /// Read the `SetEntityCoords` edit at `index`.
+    ///
+    /// # Errors
+    ///
+    /// `PyIndexError` when `index` is out of range; `PyValueError`
+    /// when the edit at `index` is not a `SetEntityCoords` (consult
+    /// `kind_at` first).
+    pub fn set_entity_coords_at(
+        &self,
+        index: usize,
+    ) -> PyResult<PySetEntityCoordsView> {
+        let edit = self.inner.get(index).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                "EditList.set_entity_coords_at: index {index} out of range \
+                 (len={})",
+                self.inner.len()
+            ))
+        })?;
+        let AssemblyEdit::SetEntityCoords { entity, coords } = edit else {
+            return Err(value_err(format!(
+                "EditList.set_entity_coords_at: edit at index {index} is not \
+                 SetEntityCoords"
+            )));
+        };
+        Ok(PySetEntityCoordsView {
+            entity_id: entity.raw(),
+            coords: coords.iter().map(|c| (c.x, c.y, c.z)).collect(),
+        })
+    }
+
+    /// Read the `SetResidueCoords` edit at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Same shape as [`Self::set_entity_coords_at`].
+    pub fn set_residue_coords_at(
+        &self,
+        index: usize,
+    ) -> PyResult<PySetResidueCoordsView> {
+        let edit = self.inner.get(index).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                "EditList.set_residue_coords_at: index {index} out of range \
+                 (len={})",
+                self.inner.len()
+            ))
+        })?;
+        let AssemblyEdit::SetResidueCoords {
+            entity,
+            residue_idx,
+            coords,
+        } = edit
+        else {
+            return Err(value_err(format!(
+                "EditList.set_residue_coords_at: edit at index {index} is not \
+                 SetResidueCoords"
+            )));
+        };
+        Ok(PySetResidueCoordsView {
+            entity_id: entity.raw(),
+            residue_idx: *residue_idx,
+            coords: coords.iter().map(|c| (c.x, c.y, c.z)).collect(),
+        })
+    }
+
+    /// Read the `MutateResidue` edit at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Same shape as [`Self::set_entity_coords_at`].
+    pub fn mutate_residue_at(
+        &self,
+        index: usize,
+    ) -> PyResult<PyMutateResidueView> {
+        let edit = self.inner.get(index).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                "EditList.mutate_residue_at: index {index} out of range \
+                 (len={})",
+                self.inner.len()
+            ))
+        })?;
+        let AssemblyEdit::MutateResidue {
+            entity,
+            residue_idx,
+            new_name,
+            new_atoms,
+            new_variants,
+        } = edit
+        else {
+            return Err(value_err(format!(
+                "EditList.mutate_residue_at: edit at index {index} is not \
+                 MutateResidue"
+            )));
+        };
+        Ok(PyMutateResidueView {
+            entity_id: entity.raw(),
+            residue_idx: *residue_idx,
+            new_name: *new_name,
+            atoms: new_atoms.iter().map(PyAtomRow::from_atom).collect(),
+            variants: new_variants
+                .iter()
+                .map(|v| PyVariant { inner: v.clone() })
+                .collect(),
+        })
+    }
+
+    /// Read the `SetVariants` edit at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Same shape as [`Self::set_entity_coords_at`].
+    pub fn set_variants_at(&self, index: usize) -> PyResult<PySetVariantsView> {
+        let edit = self.inner.get(index).ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyIndexError, _>(format!(
+                "EditList.set_variants_at: index {index} out of range (len={})",
+                self.inner.len()
+            ))
+        })?;
+        let AssemblyEdit::SetVariants {
+            entity,
+            residue_idx,
+            variants,
+        } = edit
+        else {
+            return Err(value_err(format!(
+                "EditList.set_variants_at: edit at index {index} is not \
+                 SetVariants"
+            )));
+        };
+        Ok(PySetVariantsView {
+            entity_id: entity.raw(),
+            residue_idx: *residue_idx,
+            variants: variants
+                .iter()
+                .map(|v| PyVariant { inner: v.clone() })
+                .collect(),
+        })
+    }
+}
+
+fn edit_kind_int(edit: &AssemblyEdit) -> i32 {
+    match edit {
+        AssemblyEdit::SetEntityCoords { .. } => 1,
+        AssemblyEdit::SetResidueCoords { .. } => 2,
+        AssemblyEdit::MutateResidue { .. } => 3,
+        AssemblyEdit::SetVariants { .. } => 4,
+        AssemblyEdit::AddEntity { .. } => 5,
+        AssemblyEdit::RemoveEntity { .. } => 6,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Edit view pyclasses (parallel `molex::SetEntityCoordsView` et al. in C++)
+// ---------------------------------------------------------------------------
+
+/// Python view of a `SetEntityCoords` edit. Returned by
+/// `EditList.set_entity_coords_at`.
+#[pyclass(name = "SetEntityCoordsView", module = "molex")]
+#[derive(Clone)]
+pub struct PySetEntityCoordsView {
+    /// Entity whose atoms get repositioned.
+    #[pyo3(get)]
+    pub entity_id: u32,
+    /// Per-atom positions, one `(x, y, z)` tuple per atom in
+    /// declaration order. Length equals the entity's atom count.
+    #[pyo3(get)]
+    pub coords: Vec<(f32, f32, f32)>,
+}
+
+/// Python view of a `SetResidueCoords` edit.
+#[pyclass(name = "SetResidueCoordsView", module = "molex")]
+#[derive(Clone)]
+pub struct PySetResidueCoordsView {
+    /// Polymer entity that owns the target residue.
+    #[pyo3(get)]
+    pub entity_id: u32,
+    /// Residue index within the entity's residue list.
+    #[pyo3(get)]
+    pub residue_idx: usize,
+    /// Per-atom positions for the residue, in atom-range order.
+    #[pyo3(get)]
+    pub coords: Vec<(f32, f32, f32)>,
+}
+
+/// Python view of a `MutateResidue` edit.
+#[pyclass(name = "MutateResidueView", module = "molex")]
+#[derive(Clone)]
+pub struct PyMutateResidueView {
+    /// Polymer entity that owns the target residue.
+    #[pyo3(get)]
+    pub entity_id: u32,
+    /// Residue index within the entity's residue list.
+    #[pyo3(get)]
+    pub residue_idx: usize,
+    /// New 3-letter residue name (space-padded).
+    #[pyo3(get)]
+    pub new_name: [u8; 3],
+    /// New atom list for the residue.
+    #[pyo3(get)]
+    pub atoms: Vec<PyAtomRow>,
+    /// New variant tag list for the residue.
+    #[pyo3(get)]
+    pub variants: Vec<PyVariant>,
+}
+
+/// Python view of a `SetVariants` edit.
+#[pyclass(name = "SetVariantsView", module = "molex")]
+#[derive(Clone)]
+pub struct PySetVariantsView {
+    /// Polymer entity that owns the target residue.
+    #[pyo3(get)]
+    pub entity_id: u32,
+    /// Residue index within the entity's residue list.
+    #[pyo3(get)]
+    pub residue_idx: usize,
+    /// New variant tag list for the residue.
+    #[pyo3(get)]
+    pub variants: Vec<PyVariant>,
 }
 
 // ---------------------------------------------------------------------------
@@ -451,6 +694,20 @@ impl PyAtomRow {
             element,
             name: self.name,
             formal_charge: 0,
+        }
+    }
+
+    /// Lossy conversion from internal `Atom` (rich) to `PyAtomRow`
+    /// (lean: position + name + element symbol only). Loses occupancy
+    /// / b_factor / formal_charge -- mirrors the `c_api`
+    /// `atom_to_row` helper exactly.
+    fn from_atom(a: &MolexAtom) -> Self {
+        Self {
+            position_x: a.position.x,
+            position_y: a.position.y,
+            position_z: a.position.z,
+            name: a.name,
+            element: a.element.symbol().to_owned(),
         }
     }
 }

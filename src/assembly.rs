@@ -200,10 +200,18 @@ impl Assembly {
     }
 
     // -- Mutation methods --------------------------------------------
+    //
+    // All direct content mutators are `pub(crate)`: cross-crate callers
+    // must go through [`Self::apply_edit`] / [`Self::apply_edits`] so the
+    // host's broadcast routing has a single typed funnel. The reason is
+    // protocol-shaped: every host-side Assembly change must produce
+    // exactly one `UpdateAssembly` payload (`Full` or `Delta`) per the
+    // plugin protocol; a caller that mutates directly bypasses the
+    // queue and leaves peer plugins one generation behind.
 
     /// Append an entity. Bumps the generation counter and recomputes
     /// all derived data.
-    pub fn add_entity(&mut self, entity: MoleculeEntity) {
+    pub(crate) fn add_entity(&mut self, entity: MoleculeEntity) {
         self.entities.push(Arc::new(entity));
         self.after_mutation();
     }
@@ -215,7 +223,8 @@ impl Assembly {
     /// this rather than `remove_entity` + `add_entity` whenever the
     /// goal is to swap a single entity's body without disturbing the
     /// vec ordering of the rest.
-    pub fn replace_entity(&mut self, id: EntityId, entity: MoleculeEntity) {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn replace_entity(&mut self, id: EntityId, entity: MoleculeEntity) {
         debug_assert_eq!(
             entity.id(),
             id,
@@ -232,7 +241,7 @@ impl Assembly {
     /// Remove an entity by id. Any `cross_entity_bonds` touching the
     /// removed entity are purged as part of the derived-data
     /// recomputation.
-    pub fn remove_entity(&mut self, id: EntityId) {
+    pub(crate) fn remove_entity(&mut self, id: EntityId) {
         self.entities.retain(|e| e.id() != id);
         let _ = self.ss_types.remove(&id);
         self.after_mutation();
@@ -242,7 +251,8 @@ impl Assembly {
     /// not match the entity's atom count, the mutation is abandoned
     /// (logged at error level) and the generation counter is not
     /// advanced; readers keep seeing the previous snapshot.
-    pub fn update_positions(&mut self, entity: EntityId, coords: &[Vec3]) {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn update_positions(&mut self, entity: EntityId, coords: &[Vec3]) {
         let Some(idx) = self.entities.iter().position(|e| e.id() == entity)
         else {
             log::error!(
@@ -280,7 +290,8 @@ impl Assembly {
                   \"apply this whole-assembly snapshot\" input; callers hand \
                   over ownership rather than keeping the snapshot alive."
     )]
-    pub fn set_coordinate_snapshot(&mut self, snapshot: CoordinateSnapshot) {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn set_coordinate_snapshot(&mut self, snapshot: CoordinateSnapshot) {
         for entity in &mut self.entities {
             let entity_id = entity.id();
             let Some(coords) = snapshot.per_entity.get(&entity_id) else {

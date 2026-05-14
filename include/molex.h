@@ -98,6 +98,61 @@ typedef int32_t molex_ProtonationKind;
 #endif // __cplusplus
 
 /**
+ * Per-edit kind discriminant.
+ *
+ * Returned by [`molex_edits_kind_at`]; caller dispatches on the
+ * value to pick the right per-variant getter. `AddEntity` /
+ * `RemoveEntity` are listed for completeness but never appear in
+ * lists obtained from `molex_delta01_to_edits` (the DELTA01
+ * serializer rejects topology edits up front).
+ */
+enum molex_EditKind
+#ifdef __cplusplus
+  : int32_t
+#endif // __cplusplus
+ {
+  /**
+   * Sentinel returned when the list pointer is null or the index is
+   * out of bounds.
+   */
+  MOLEX_EDIT_KIND_INVALID = 0,
+  /**
+   * `SetEntityCoords` — bulk per-entity coordinate update. Read via
+   * [`molex_edits_set_entity_coords_at`].
+   */
+  MOLEX_EDIT_KIND_SET_ENTITY_COORDS = 1,
+  /**
+   * `SetResidueCoords` — per-residue coordinate update inside a
+   * polymer entity. Read via
+   * [`molex_edits_set_residue_coords_at`].
+   */
+  MOLEX_EDIT_KIND_SET_RESIDUE_COORDS = 2,
+  /**
+   * `MutateResidue` — residue identity + atoms + variants
+   * replacement. Read via [`molex_edits_mutate_residue_at`].
+   */
+  MOLEX_EDIT_KIND_MUTATE_RESIDUE = 3,
+  /**
+   * `SetVariants` — replace a residue's variant tag list. Read
+   * via [`molex_edits_set_variants_at`].
+   */
+  MOLEX_EDIT_KIND_SET_VARIANTS = 4,
+  /**
+   * `AddEntity` — topology edit; appears only in Rust-side edit
+   * lists, never in lists decoded from DELTA01.
+   */
+  MOLEX_EDIT_KIND_ADD_ENTITY = 5,
+  /**
+   * `RemoveEntity` — topology edit; appears only in Rust-side edit
+   * lists, never in lists decoded from DELTA01.
+   */
+  MOLEX_EDIT_KIND_REMOVE_ENTITY = 6,
+};
+#ifndef __cplusplus
+typedef int32_t molex_EditKind;
+#endif // __cplusplus
+
+/**
  * Discriminant for an entity's molecule classification across the FFI
  * boundary. Stable integer codes so C consumers can pattern-match
  * without depending on Rust's enum layout.
@@ -159,9 +214,12 @@ typedef struct molex_Assembly molex_Assembly;
 typedef struct molex_Atom molex_Atom;
 
 /**
- * Owned, ordered list of typed Assembly edits. Free with
- * [`molex_edits_free`]. Opaque (no field-level introspection from C);
- * use [`molex_edits_to_delta01`] to dump to wire bytes for inspection.
+ * Owned, ordered list of typed Assembly edits.
+ *
+ * Free with [`molex_edits_free`]. Enumerate per-entry via
+ * [`molex_edits_kind_at`] followed by the matching
+ * `molex_edits_*_at` per-variant getter; or dump to wire bytes with
+ * [`molex_edits_to_delta01`].
  */
 typedef struct molex_EditList molex_EditList;
 
@@ -472,6 +530,122 @@ int32_t molex_assembly_apply_edits(molex_Assembly *assembly,
 int32_t molex_assembly_apply_delta01(molex_Assembly *assembly,
                                      const uint8_t *bytes_ptr,
                                      uintptr_t len)
+;
+
+/**
+ * Return the kind of the edit at `index`. Returns
+ * [`molex_EditKind::Invalid`] when `list` is null or `index >=
+ * molex_edits_count(list)`.
+ */
+
+molex_EditKind molex_edits_kind_at(const molex_EditList *list,
+                                   uintptr_t index)
+;
+
+/**
+ * Read the fields of a `SetEntityCoords` edit at `index`.
+ *
+ * On success returns [`MOLEX_OK`] and writes the entity id plus a
+ * borrowed coord pointer (3 * `*out_coord_count` `f32`s in
+ * x,y,z,x,y,z order). The coord pointer is valid until the parent
+ * EditList is freed or mutated.
+ *
+ * Returns [`MOLEX_ERR_NULL`] on null inputs; returns [`MOLEX_ERR`]
+ * when `index` is out of range or the edit at `index` is not a
+ * `SetEntityCoords` (caller should consult [`molex_edits_kind_at`]
+ * before calling).
+ */
+
+int32_t molex_edits_set_entity_coords_at(const molex_EditList *list,
+                                         uintptr_t index,
+                                         uint32_t *out_entity_id,
+                                         const float **out_coords_xyz,
+                                         uintptr_t *out_coord_count)
+;
+
+/**
+ * Read the fields of a `SetResidueCoords` edit at `index`. Same
+ * lifetime contract on `out_coords_xyz` as
+ * [`molex_edits_set_entity_coords_at`].
+ */
+
+int32_t molex_edits_set_residue_coords_at(const molex_EditList *list,
+                                          uintptr_t index,
+                                          uint32_t *out_entity_id,
+                                          uintptr_t *out_residue_idx,
+                                          const float **out_coords_xyz,
+                                          uintptr_t *out_coord_count)
+;
+
+/**
+ * Read the fields of a `MutateResidue` edit at `index`.
+ *
+ * `out_new_name` receives a borrowed 3-byte pointer (lifetime tied
+ * to the parent EditList).
+ *
+ * `out_atoms` / `out_atom_count` receive a freshly-allocated
+ * `molex_AtomRow` array derived from the edit's internal `Atom`
+ * storage. Caller MUST free with [`molex_atom_rows_free`]. The
+ * conversion is lossy on the `occupancy` / `b_factor` /
+ * `formal_charge` fields (those don't ride DELTA01 and aren't
+ * representable in `molex_AtomRow`).
+ *
+ * `out_variants` / `out_variant_count` receive a freshly-allocated
+ * `molex_Variant` array; the `str_ptr` fields inside it point INTO
+ * the parent EditList's owned `String`s (valid until the list is
+ * freed or mutated). Caller MUST free the outer array with
+ * [`molex_variants_free`].
+ */
+
+int32_t molex_edits_mutate_residue_at(const molex_EditList *list,
+                                      uintptr_t index,
+                                      uint32_t *out_entity_id,
+                                      uintptr_t *out_residue_idx,
+                                      const uint8_t **out_new_name,
+                                      const molex_AtomRow **out_atoms,
+                                      uintptr_t *out_atom_count,
+                                      const molex_Variant **out_variants,
+                                      uintptr_t *out_variant_count)
+;
+
+/**
+ * Read the fields of a `SetVariants` edit at `index`. Same lifetime
+ * contract on `out_variants` as
+ * [`molex_edits_mutate_residue_at`]; caller frees via
+ * [`molex_variants_free`].
+ */
+
+int32_t molex_edits_set_variants_at(const molex_EditList *list,
+                                    uintptr_t index,
+                                    uint32_t *out_entity_id,
+                                    uintptr_t *out_residue_idx,
+                                    const molex_Variant **out_variants,
+                                    uintptr_t *out_variant_count)
+;
+
+/**
+ * Free a `molex_AtomRow` array returned by
+ * [`molex_edits_mutate_residue_at`]. Safe to call with a null
+ * pointer (no-op). `count` MUST match the value originally written
+ * to `out_atom_count`.
+ */
+
+void molex_atom_rows_free(molex_AtomRow *ptr,
+                          uintptr_t count)
+;
+
+/**
+ * Free a `molex_Variant` array.
+ *
+ * Returned by [`molex_edits_mutate_residue_at`] or
+ * [`molex_edits_set_variants_at`]. Safe to call with a null pointer
+ * (no-op). The borrowed string payloads pointed at by each entry's
+ * `str_ptr` are NOT freed by this call -- they belong to the parent
+ * EditList.
+ */
+
+void molex_variants_free(molex_Variant *ptr,
+                         uintptr_t count)
 ;
 
 /**

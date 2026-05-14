@@ -33,13 +33,18 @@ use crate::ops::wire::delta::{
     deserialize_edits, serialize_edits, DeltaSerializeError,
 };
 
+pub mod read;
+
 // ---------------------------------------------------------------------------
 // Opaque list handle
 // ---------------------------------------------------------------------------
 
-/// Owned, ordered list of typed Assembly edits. Free with
-/// [`molex_edits_free`]. Opaque (no field-level introspection from C);
-/// use [`molex_edits_to_delta01`] to dump to wire bytes for inspection.
+/// Owned, ordered list of typed Assembly edits.
+///
+/// Free with [`molex_edits_free`]. Enumerate per-entry via
+/// [`molex_edits_kind_at`] followed by the matching
+/// `molex_edits_*_at` per-variant getter; or dump to wire bytes with
+/// [`molex_edits_to_delta01`].
 pub struct molex_EditList;
 
 /// Construct an empty edit list.

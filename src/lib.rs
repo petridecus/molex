@@ -93,6 +93,10 @@ fn molex(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<python::PyEditList>()?;
     m.add_class::<python::PyVariant>()?;
     m.add_class::<python::PyAtomRow>()?;
+    m.add_class::<python::PySetEntityCoordsView>()?;
+    m.add_class::<python::PySetResidueCoordsView>()?;
+    m.add_class::<python::PyMutateResidueView>()?;
+    m.add_class::<python::PySetVariantsView>()?;
 
     Ok(())
 }

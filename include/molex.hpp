@@ -33,6 +33,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "molex.h"
@@ -57,6 +58,7 @@ using AtomRow = ::molex_AtomRow;
 using Variant = ::molex_Variant;
 using VariantKind = ::molex_VariantKind;
 using ProtonationKind = ::molex_ProtonationKind;
+using EditKind = ::molex_EditKind;
 
 // ---------------------------------------------------------------------------
 // MoleculeType (alias to the C enum so callers write `molex::MoleculeType`)
@@ -590,6 +592,210 @@ class EditList {
   }
 
   const ::molex_EditList* handle() const noexcept { return handle_; }
+
+  // -------------------------------------------------------------------------
+  // Read accessors (per-variant views)
+  // -------------------------------------------------------------------------
+  //
+  // The C API exposes per-kind getters that return either borrowed
+  // pointers into the EditList (coords, residue name) or freshly
+  // heap-allocated temporary arrays (atoms, variants) that the caller
+  // must free via `molex_atom_rows_free` / `molex_variants_free`. The
+  // RAII wrappers below encapsulate that lifecycle so consumers never
+  // call the free functions directly.
+  //
+  // All views borrow from the parent EditList; they MUST NOT outlive
+  // the EditList or be used after the list is mutated (push_*,
+  // assignment, etc.).
+
+  /// View of a `SetEntityCoords` edit. Coords are flat `[x, y, z, ...]`.
+  class SetEntityCoordsView {
+   public:
+    std::uint32_t entity_id{};
+    const float* coords_xyz{nullptr};
+    std::size_t coord_count{0};  // number of (x,y,z) triples
+  };
+
+  /// View of a `SetResidueCoords` edit.
+  class SetResidueCoordsView {
+   public:
+    std::uint32_t entity_id{};
+    std::size_t residue_idx{0};
+    const float* coords_xyz{nullptr};
+    std::size_t coord_count{0};
+  };
+
+  /// View of a `MutateResidue` edit. Owns the temporary atom + variant
+  /// arrays returned by the C accessor; frees them on destruction.
+  /// Move-only.
+  class MutateResidueView {
+   public:
+    std::uint32_t entity_id{};
+    std::size_t residue_idx{0};
+    /// 3 bytes, space-padded; borrowed from the parent EditList.
+    const std::uint8_t* new_name{nullptr};
+    const AtomRow* atoms{nullptr};
+    std::size_t atom_count{0};
+    const Variant* variants{nullptr};
+    std::size_t variant_count{0};
+
+    MutateResidueView() = default;
+    ~MutateResidueView() { free_temps(); }
+
+    MutateResidueView(const MutateResidueView&) = delete;
+    MutateResidueView& operator=(const MutateResidueView&) = delete;
+
+    MutateResidueView(MutateResidueView&& other) noexcept { swap_from(other); }
+    MutateResidueView& operator=(MutateResidueView&& other) noexcept {
+      if (this != &other) {
+        free_temps();
+        swap_from(other);
+      }
+      return *this;
+    }
+
+   private:
+    void swap_from(MutateResidueView& other) noexcept {
+      entity_id = other.entity_id;
+      residue_idx = other.residue_idx;
+      new_name = other.new_name;
+      atoms = other.atoms;
+      atom_count = other.atom_count;
+      variants = other.variants;
+      variant_count = other.variant_count;
+      other.atoms = nullptr;
+      other.atom_count = 0;
+      other.variants = nullptr;
+      other.variant_count = 0;
+    }
+    void free_temps() noexcept {
+      if (atoms != nullptr) {
+        ::molex_atom_rows_free(
+            const_cast<AtomRow*>(atoms), atom_count);
+        atoms = nullptr;
+        atom_count = 0;
+      }
+      if (variants != nullptr) {
+        ::molex_variants_free(
+            const_cast<Variant*>(variants), variant_count);
+        variants = nullptr;
+        variant_count = 0;
+      }
+    }
+  };
+
+  /// View of a `SetVariants` edit. Owns the temporary variant array.
+  /// Move-only.
+  class SetVariantsView {
+   public:
+    std::uint32_t entity_id{};
+    std::size_t residue_idx{0};
+    const Variant* variants{nullptr};
+    std::size_t variant_count{0};
+
+    SetVariantsView() = default;
+    ~SetVariantsView() { free_temps(); }
+
+    SetVariantsView(const SetVariantsView&) = delete;
+    SetVariantsView& operator=(const SetVariantsView&) = delete;
+
+    SetVariantsView(SetVariantsView&& other) noexcept { swap_from(other); }
+    SetVariantsView& operator=(SetVariantsView&& other) noexcept {
+      if (this != &other) {
+        free_temps();
+        swap_from(other);
+      }
+      return *this;
+    }
+
+   private:
+    void swap_from(SetVariantsView& other) noexcept {
+      entity_id = other.entity_id;
+      residue_idx = other.residue_idx;
+      variants = other.variants;
+      variant_count = other.variant_count;
+      other.variants = nullptr;
+      other.variant_count = 0;
+    }
+    void free_temps() noexcept {
+      if (variants != nullptr) {
+        ::molex_variants_free(
+            const_cast<Variant*>(variants), variant_count);
+        variants = nullptr;
+        variant_count = 0;
+      }
+    }
+  };
+
+  /// Tagged union of all readable edit kinds (the four steady-state
+  /// variants that ride DELTA01 -- `AddEntity` / `RemoveEntity` are
+  /// not exposed because they don't survive the wire round trip).
+  /// `EditList::view_at` returns this; consumers `std::visit` over it.
+  using EditView = std::variant<
+      SetEntityCoordsView,
+      SetResidueCoordsView,
+      MutateResidueView,
+      SetVariantsView>;
+
+  /// Kind of the edit at `index`, or `EditKind::Invalid` if the index
+  /// is out of range.
+  EditKind kind_at(std::size_t index) const noexcept {
+    return ::molex_edits_kind_at(handle_, index);
+  }
+
+  /// Read the edit at `index` as a typed view. Empty optional when
+  /// the index is out of range or the edit is a topology edit
+  /// (`AddEntity` / `RemoveEntity`); see `kind_at` to distinguish.
+  ///
+  /// (Variant constants below are the cbindgen-emitted names; the
+  /// project's cbindgen config renames Rust PascalCase variants to
+  /// `ScreamingSnakeCase` with the enum-name prefix.)
+  std::optional<EditView> view_at(std::size_t index) const {
+    switch (::molex_edits_kind_at(handle_, index)) {
+      case MOLEX_EDIT_KIND_SET_ENTITY_COORDS: {
+        SetEntityCoordsView v;
+        if (::molex_edits_set_entity_coords_at(
+                handle_, index, &v.entity_id, &v.coords_xyz,
+                &v.coord_count) != MOLEX_OK) {
+          return std::nullopt;
+        }
+        return EditView{std::move(v)};
+      }
+      case MOLEX_EDIT_KIND_SET_RESIDUE_COORDS: {
+        SetResidueCoordsView v;
+        if (::molex_edits_set_residue_coords_at(
+                handle_, index, &v.entity_id, &v.residue_idx,
+                &v.coords_xyz, &v.coord_count) != MOLEX_OK) {
+          return std::nullopt;
+        }
+        return EditView{std::move(v)};
+      }
+      case MOLEX_EDIT_KIND_MUTATE_RESIDUE: {
+        MutateResidueView v;
+        if (::molex_edits_mutate_residue_at(
+                handle_, index, &v.entity_id, &v.residue_idx,
+                &v.new_name, &v.atoms, &v.atom_count, &v.variants,
+                &v.variant_count) != MOLEX_OK) {
+          return std::nullopt;
+        }
+        return EditView{std::move(v)};
+      }
+      case MOLEX_EDIT_KIND_SET_VARIANTS: {
+        SetVariantsView v;
+        if (::molex_edits_set_variants_at(
+                handle_, index, &v.entity_id, &v.residue_idx,
+                &v.variants, &v.variant_count) != MOLEX_OK) {
+          return std::nullopt;
+        }
+        return EditView{std::move(v)};
+      }
+      case MOLEX_EDIT_KIND_INVALID:
+      case MOLEX_EDIT_KIND_ADD_ENTITY:
+      case MOLEX_EDIT_KIND_REMOVE_ENTITY:
+      default:
+        return std::nullopt;
+    }
+  }
 
  private:
   explicit EditList(::molex_EditList* h) : handle_(h) {}
